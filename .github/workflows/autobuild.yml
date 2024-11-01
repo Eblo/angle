@@ -1,0 +1,56 @@
+name: windows-x64
+
+on: 
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build-windows-x64:
+    runs-on: windows-latest
+    steps:
+      - name: Setup Windows 10 SDK version 10.0.26100.0
+        uses: GuillaumeFalourd/setup-windows10-sdk-action@v2.2
+        with:
+          sdk-version: 26100
+      - name: Checkout sources
+        run: |
+          git clone https://github.com/Eblo/angle .
+      - name: Fetch depot_tools
+        run: |
+          git clone https://chromium.googlesource.com/chromium/tools/depot_tools.git
+      - name: Build
+        shell: cmd
+        run: |
+          set PATH=%cd%\depot_tools;%PATH%
+          set DEPOT_TOOLS_WIN_TOOLCHAIN=0
+          set WINDOWSSDKDIR=C:\Program Files (x86)\Windows Kits\10
+          cmd /c gclient
+          cmd /c python scripts/bootstrap.py
+          cmd /c gclient sync
+          cmd /c gn gen out/Release --args="is_debug=false"
+          cmd /c autoninja -C out/Release
+      - name: Pack
+        shell: bash
+        run: |
+          mkdir windows-x64
+          mkdir windows-x64/dist
+          rm -rf out/Release/cdb
+          rm -rf out/Release/gen
+          rm -rf out/Release/obj
+          rm -rf out/Release/args.gn
+          rm -rf out/Release/build.ninja
+          rm -rf out/Release/build.ninja.d
+          rm -rf out/Release/toolchain.ninja
+          rm -rf out/Release/environment.*
+          find out/Release -name "*.pdb" -delete
+          mv -f out/Release/* windows-x64/dist/
+          cp -rf include windows-x64/
+          find windows-x64 -name ".clang-format" -delete
+          find windows-x64 -name "*.md" -delete
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-x64
+          path: windows-x64
