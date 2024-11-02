@@ -29,8 +29,8 @@ def main():
         content = gclient_file.read()
 
     content = content.replace('change2dot', '.')
-    if sys.platform.startswith('linux'):
-        content += 'target_os = [ \'android\' ]\n'
+    # if sys.platform.startswith('linux'):
+    #     content += 'target_os = [ \'android\' ]\n'
 
     with open('.gclient', 'w') as gclient_file:
         gclient_file.write(content)

@@ -29,18 +29,6 @@ jobs:
           cmd /c gclient sync
           cmd /c gn gen out/Release --args="is_debug=false"
           cmd /c autoninja -C out/Release
-      - name: Pack
-        shell: bash
-        id: windows-build
-        run: |
-          mkdir windows-x64
-          mv -f out/Release/libEGL.dll windows-x64/
-          mv -f out/Release/libGLESv2.dll windows-x64/
-          mv -f out/Release/vk_swiftshader.dll windows-x64/
-          mv -f out/Release/vk_swiftshader_icd.json windows-x64/
-          mv -f out/Release/vulkan-1.dll windows-x64/
-          mv -f out/Release/vulkan-1.dll windows-x64/
-          mv -f LICENSE windows-x64/
       - name: Cache third_party dependencies
         uses: actions/cache@v4
         with:
@@ -57,6 +45,18 @@ jobs:
         with:
           path: out
           key: ${{ runner.os }}-out-${{ hashFiles('src/**/*') }}
+      - name: Pack
+        shell: bash
+        run: |
+          mkdir windows-x64
+          ls
+          mv -f out/Release/libEGL.dll windows-x64/
+          mv -f out/Release/libGLESv2.dll windows-x64/
+          mv -f out/Release/vk_swiftshader.dll windows-x64/
+          mv -f out/Release/vk_swiftshader_icd.json windows-x64/
+          mv -f out/Release/vulkan-1.dll windows-x64/
+          mv -f out/Release/vulkan-1.dll windows-x64/
+          mv -f LICENSE windows-x64/
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
@@ -77,19 +77,8 @@ jobs:
           python scripts/bootstrap.py
           gclient sync
           ./build/install-build-deps.sh
-          gn gen out/Release --args="is_debug=false"
+          gn gen out/Release --args="is_debug=false target_os=linux is_android=false"
           autoninja -C out/Release
-      - name: Pack
-        id: linux-build
-        run: |
-          mkdir linux-x64
-          mv -f out/Release/libEGL.so linux-x64/
-          mv -f out/Release/libGLESv2.so linux-x64/
-          mv -f out/Release/vk_swiftshader.so linux-x64/
-          mv -f out/Release/vk_swiftshader_icd.json linux-x64/
-          mv -f out/Release/vulkan-1.so linux-x64/
-          mv -f out/Release/vulkan-1.so linux-x64/
-          mv -f LICENSE linux-x64/
       - name: Cache third_party dependencies
         uses: actions/cache@v4
         with:
@@ -106,6 +95,17 @@ jobs:
         with:
           path: out
           key: ${{ runner.os }}-out-${{ hashFiles('src/**/*') }}
+      - name: Pack
+        run: |
+          mkdir linux-x64
+          ls
+          mv -f out/Release/libEGL.so linux-x64/
+          mv -f out/Release/libGLESv2.so linux-x64/
+          mv -f out/Release/vk_swiftshader.so linux-x64/
+          mv -f out/Release/vk_swiftshader_icd.json linux-x64/
+          mv -f out/Release/vulkan-1.so linux-x64/
+          mv -f out/Release/vulkan-1.so linux-x64/
+          mv -f LICENSE linux-x64/
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
@@ -127,15 +127,6 @@ jobs:
           gclient sync
           gn gen out/Release --args="is_debug=false"
           autoninja -C out/Release
-      - name: Pack
-        id: macos-build
-        run: |
-          mkdir macos-x64
-          mv -f out/Release/libEGL.dylib macos-x64/
-          mv -f out/Release/libGLESv2.dylib macos-x64/
-          mv -f out/Release/vk_swiftshader.dylib linux-x64/
-          mv -f out/Release/vk_swiftshader_icd.json linux-x64/
-          mv -f LICENSE macos-x64/
       - name: Cache third_party dependencies
         uses: actions/cache@v4
         with:
@@ -152,6 +143,15 @@ jobs:
         with:
           path: out
           key: ${{ runner.os }}-out-${{ hashFiles('src/**/*') }}
+      - name: Pack
+        run: |
+          mkdir macos-x64
+          ls
+          mv -f out/Release/libEGL.dylib macos-x64/
+          mv -f out/Release/libGLESv2.dylib macos-x64/
+          mv -f out/Release/vk_swiftshader.dylib macos-x64/
+          mv -f out/Release/vk_swiftshader_icd.json macos-x64/
+          mv -f LICENSE macos-x64/
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
