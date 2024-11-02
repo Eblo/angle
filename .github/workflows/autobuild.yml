@@ -29,11 +29,6 @@ jobs:
           cmd /c gclient sync
           cmd /c gn gen out/Release --args="is_debug=false"
           cmd /c autoninja -C out/Release
-      - name: Cache third_party dependencies
-        uses: actions/cache@v4
-        with:
-          path: third_party
-          key: ${{ runner.os }}-third-party-${{ hashFiles('third_party/**/*') }}
       - name: Cache build artifacts
         uses: actions/cache@v4
         with:
@@ -77,13 +72,8 @@ jobs:
           python scripts/bootstrap.py
           gclient sync
           ./build/install-build-deps.sh
-          gn gen out/Release --args="is_debug=false target_os=linux is_android=false"
+          gn gen out/Release --args="is_debug=false is_android=false"
           autoninja -C out/Release
-      - name: Cache third_party dependencies
-        uses: actions/cache@v4
-        with:
-          path: third_party
-          key: ${{ runner.os }}-third-party-${{ hashFiles('third_party/**/*') }}
       - name: Cache build artifacts
         uses: actions/cache@v4
         with:
@@ -127,11 +117,6 @@ jobs:
           gclient sync
           gn gen out/Release --args="is_debug=false"
           autoninja -C out/Release
-      - name: Cache third_party dependencies
-        uses: actions/cache@v4
-        with:
-          path: third_party
-          key: ${{ runner.os }}-third-party-${{ hashFiles('third_party/**/*') }}
       - name: Cache build artifacts
         uses: actions/cache@v4
         with:
