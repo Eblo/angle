@@ -17,8 +17,6 @@ jobs:
       - name: Checkout sources
         run: |
           git clone https://github.com/Eblo/angle .
-      - name: Fetch depot_tools
-        run: |
           git clone https://chromium.googlesource.com/chromium/tools/depot_tools.git
       - name: Build
         shell: cmd
@@ -33,24 +31,129 @@ jobs:
           cmd /c autoninja -C out/Release
       - name: Pack
         shell: bash
+        id: windows-build
         run: |
           mkdir windows-x64
-          mkdir windows-x64/dist
-          rm -rf out/Release/cdb
-          rm -rf out/Release/gen
-          rm -rf out/Release/obj
-          rm -rf out/Release/args.gn
-          rm -rf out/Release/build.ninja
-          rm -rf out/Release/build.ninja.d
-          rm -rf out/Release/toolchain.ninja
-          rm -rf out/Release/environment.*
-          find out/Release -name "*.pdb" -delete
-          mv -f out/Release/* windows-x64/dist/
-          cp -rf include windows-x64/
-          find windows-x64 -name ".clang-format" -delete
-          find windows-x64 -name "*.md" -delete
+          mv -f out/Release/libEGL.dll windows-x64/
+          mv -f out/Release/libGLESv2.dll windows-x64/
+          mv -f out/Release/vk_swiftshader.dll windows-x64/
+          mv -f out/Release/vk_swiftshader_icd.json windows-x64/
+          mv -f out/Release/vulkan-1.dll windows-x64/
+          mv -f out/Release/vulkan-1.dll windows-x64/
+          mv -f LICENSE windows-x64/
+      - name: Cache third_party dependencies
+        uses: actions/cache@v4
+        with:
+          path: third_party
+          key: ${{ runner.os }}-third-party-${{ hashFiles('third_party/**/*') }}
+      - name: Cache build artifacts
+        uses: actions/cache@v4
+        with:
+          path: build
+          key: ${{ runner.os }}-build-${{ hashFiles('src/**/*', 'CMakeLists.txt') }}
+    
+      - name: Cache output artifacts
+        uses: actions/cache@v4
+        with:
+          path: out
+          key: ${{ runner.os }}-out-${{ hashFiles('src/**/*') }}
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
           name: windows-x64
           path: windows-x64
+
+  build-linux-x64:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout sources
+        run: |
+          git clone https://github.com/Eblo/angle .
+          git clone https://chromium.googlesource.com/chromium/tools/depot_tools.git
+      - name: Build
+        run: |
+          export PATH="$(pwd)/depot_tools:$PATH"
+          gclient
+          python scripts/bootstrap.py
+          gclient sync
+          ./build/install-build-deps.sh
+          gn gen out/Release --args="is_debug=false"
+          autoninja -C out/Release
+      - name: Pack
+        id: linux-build
+        run: |
+          mkdir linux-x64
+          mv -f out/Release/libEGL.so linux-x64/
+          mv -f out/Release/libGLESv2.so linux-x64/
+          mv -f out/Release/vk_swiftshader.so linux-x64/
+          mv -f out/Release/vk_swiftshader_icd.json linux-x64/
+          mv -f out/Release/vulkan-1.so linux-x64/
+          mv -f out/Release/vulkan-1.so linux-x64/
+          mv -f LICENSE linux-x64/
+      - name: Cache third_party dependencies
+        uses: actions/cache@v4
+        with:
+          path: third_party
+          key: ${{ runner.os }}-third-party-${{ hashFiles('third_party/**/*') }}
+      - name: Cache build artifacts
+        uses: actions/cache@v4
+        with:
+          path: build
+          key: ${{ runner.os }}-build-${{ hashFiles('src/**/*', 'CMakeLists.txt') }}
+      
+      - name: Cache output artifacts
+        uses: actions/cache@v4
+        with:
+          path: out
+          key: ${{ runner.os }}-out-${{ hashFiles('src/**/*') }}
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-x64
+          path: linux-x64
+
+  build-macos-x64:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout sources
+        run: |
+          git clone https://github.com/Eblo/angle .
+          git clone https://chromium.googlesource.com/chromium/tools/depot_tools.git
+      - name: Build
+        run: |
+          export PATH="$(pwd)/depot_tools:$PATH"
+          gclient
+          python scripts/bootstrap.py
+          gclient sync
+          gn gen out/Release --args="is_debug=false"
+          autoninja -C out/Release
+      - name: Pack
+        id: macos-build
+        run: |
+          mkdir macos-x64
+          mv -f out/Release/libEGL.dylib macos-x64/
+          mv -f out/Release/libGLESv2.dylib macos-x64/
+          mv -f out/Release/vk_swiftshader.dylib linux-x64/
+          mv -f out/Release/vk_swiftshader_icd.json linux-x64/
+          mv -f LICENSE macos-x64/
+      - name: Cache third_party dependencies
+        uses: actions/cache@v4
+        with:
+          path: third_party
+          key: ${{ runner.os }}-third-party-${{ hashFiles('third_party/**/*') }}
+      - name: Cache build artifacts
+        uses: actions/cache@v4
+        with:
+          path: build
+          key: ${{ runner.os }}-build-${{ hashFiles('src/**/*', 'CMakeLists.txt') }}
+      
+      - name: Cache output artifacts
+        uses: actions/cache@v4
+        with:
+          path: out
+          key: ${{ runner.os }}-out-${{ hashFiles('src/**/*') }}
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-x64
+          path: macos-x64
