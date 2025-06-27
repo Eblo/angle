@@ -39,12 +39,12 @@ bool HasFeatureOverride(const std::vector<Feature> &overrides, Feature feature)
 }
 }  // namespace
 
-PlatformParameters::PlatformParameters() : PlatformParameters(2, 0, GLESDriverType::AngleEGL) {}
+PlatformParameters::PlatformParameters() : PlatformParameters(2, 0, kDefaultGLESDriver) {}
 
 PlatformParameters::PlatformParameters(EGLint majorVersion,
                                        EGLint minorVersion,
                                        const EGLPlatformParameters &eglPlatformParameters)
-    : driver(GLESDriverType::AngleEGL),
+    : driver(kDefaultGLESDriver),
       noFixture(false),
       eglParameters(eglPlatformParameters),
       majorVersion(majorVersion),
@@ -175,7 +175,7 @@ std::ostream &operator<<(std::ostream &stream, const PlatformParameters &pp)
             stream << "WGL";
             break;
         case GLESDriverType::SystemEGL:
-            stream << "EGL";
+            stream << GetRendererName(pp.eglParameters.renderer);
             break;
         case GLESDriverType::ZinkEGL:
             stream << "Zink";
@@ -821,31 +821,6 @@ PlatformParameters ES3_WGL()
     return PlatformParameters(3, 0, GLESDriverType::SystemWGL);
 }
 
-PlatformParameters ES1_EGL()
-{
-    return PlatformParameters(1, 0, GLESDriverType::SystemEGL);
-}
-
-PlatformParameters ES2_EGL()
-{
-    return PlatformParameters(2, 0, GLESDriverType::SystemEGL);
-}
-
-PlatformParameters ES3_EGL()
-{
-    return PlatformParameters(3, 0, GLESDriverType::SystemEGL);
-}
-
-PlatformParameters ES31_EGL()
-{
-    return PlatformParameters(3, 1, GLESDriverType::SystemEGL);
-}
-
-PlatformParameters ES32_EGL()
-{
-    return PlatformParameters(3, 2, GLESDriverType::SystemEGL);
-}
-
 PlatformParameters ES1_ANGLE_Vulkan_Secondaries()
 {
     return WithVulkanSecondaries(ES1_VULKAN());
@@ -874,6 +849,11 @@ PlatformParameters ES32_ANGLE_Vulkan_Secondaries()
 PlatformParameters ES2_WEBGPU()
 {
     return PlatformParameters(2, 0, egl_platform::WEBGPU());
+}
+
+PlatformParameters ES3_WEBGPU()
+{
+    return PlatformParameters(3, 0, egl_platform::WEBGPU());
 }
 
 PlatformParameters ES1_Zink()

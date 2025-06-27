@@ -242,7 +242,7 @@ void InitArgumentBufferEncoder(mtl::Context *context,
                                ProgramArgumentBufferEncoderMtl *encoder)
 {
     encoder->metalArgBufferEncoder =
-        mtl::adoptObjCObj([function newArgumentEncoderWithBufferIndex:bufferIndex]);
+        angle::adoptObjCPtr([function newArgumentEncoderWithBufferIndex:bufferIndex]);
     if (encoder->metalArgBufferEncoder)
     {
         encoder->bufferPool.initialize(context, encoder->metalArgBufferEncoder.get().encodedLength,
@@ -351,29 +351,20 @@ angle::Result CreateMslShaderLib(mtl::Context *context,
         mtl::LibraryCache &libraryCache = context->getDisplay()->getLibraryCache();
 
         // Convert to actual binary shader
-        mtl::AutoObjCPtr<NSError *> err = nil;
-        const bool disableFastMath =
-            context->getDisplay()->getFeatures().intelDisableFastMath.enabled ||
-            translatedMslInfo->hasIsnanOrIsinf;
+        angle::ObjCPtr<NSError> err;
+        const bool disableFastMath      = translatedMslInfo->hasIsnanOrIsinf;
         const bool usesInvariance       = translatedMslInfo->hasInvariant;
         translatedMslInfo->metalLibrary = libraryCache.getOrCompileShaderLibrary(
             context->getDisplay(), translatedMslInfo->metalShaderSource, substitutionMacros,
             disableFastMath, usesInvariance, &err);
-        if (err && !translatedMslInfo->metalLibrary)
+        if (err || !translatedMslInfo->metalLibrary)
         {
-            std::ostringstream ss;
-            ss << "Internal error compiling shader with Metal backend.\n";
-            ss << err.get().localizedDescription.UTF8String << "\n";
-            ss << "-----\n";
-            ss << *(translatedMslInfo->metalShaderSource);
-            ss << "-----\n";
-
-            infoLog << ss.str();
-
-            ANGLE_MTL_HANDLE_ERROR(context, ss.str().c_str(), GL_INVALID_OPERATION);
-            return angle::Result::Stop;
+            infoLog << "Internal error while linking shader. MSL compilation error:\n"
+                    << (err ? err.get().localizedDescription.UTF8String : "unknown error")
+                    << ".\nTranslated source:\n"
+                    << *(translatedMslInfo->metalShaderSource);
+            ANGLE_MTL_CHECK(context, translatedMslInfo->metalLibrary, err);
         }
-
         return angle::Result::Continue;
     }
 }
@@ -781,12 +772,8 @@ angle::Result ProgramExecutableMtl::resizeDefaultUniformBlocksMemory(
         {
             ASSERT(requiredBufferSize[shaderType] <= mtl::kDefaultUniformsMaxSize);
 
-            if (!mDefaultUniformBlocks[shaderType].uniformData.resize(
-                    requiredBufferSize[shaderType]))
-            {
-                ANGLE_MTL_CHECK(context, false, GL_OUT_OF_MEMORY);
-            }
-
+            ANGLE_CHECK_GL_ALLOC(context, mDefaultUniformBlocks[shaderType].uniformData.resize(
+                                              requiredBufferSize[shaderType]));
             // Initialize uniform buffer memory to zero by default.
             mDefaultUniformBlocks[shaderType].uniformData.fill(0);
             mDefaultUniformBlocksDirty.set(shaderType);
@@ -899,7 +886,7 @@ angle::Result ProgramExecutableMtl::setupDraw(const gl::Context *glContext,
         ANGLE_TRY(
             getSpecializedShader(context, gl::ShaderType::Fragment, pipelineDesc, &fragmentShader));
 
-        mtl::AutoObjCPtr<id<MTLRenderPipelineState>> pipelineState;
+        angle::ObjCPtr<id<MTLRenderPipelineState>> pipelineState;
         ANGLE_TRY(context->getPipelineCache().getRenderPipeline(
             context, vertexShader, fragmentShader, pipelineDesc, &pipelineState));
 
@@ -949,7 +936,7 @@ angle::Result ProgramExecutableMtl::getSpecializedShader(
 
     mtl::TranslatedShaderInfo *translatedMslInfo = &mMslShaderTranslateInfo[shaderType];
     ProgramShaderObjVariantMtl *shaderVariant;
-    mtl::AutoObjCObj<MTLFunctionConstantValues> funcConstants;
+    angle::ObjCPtr<MTLFunctionConstantValues> funcConstants;
 
     if (shaderType == gl::ShaderType::Vertex)
     {
@@ -986,7 +973,7 @@ angle::Result ProgramExecutableMtl::getSpecializedShader(
             NSString *discardEnabledStr =
                 [NSString stringWithUTF8String:sh::mtl::kRasterizerDiscardEnabledConstName];
 
-            funcConstants = mtl::adoptObjCObj([[MTLFunctionConstantValues alloc] init]);
+            funcConstants = angle::adoptObjCPtr([[MTLFunctionConstantValues alloc] init]);
             [funcConstants setConstantValue:&emulateDiscard
                                        type:MTLDataTypeBool
                                    withName:discardEnabledStr];
@@ -1017,7 +1004,7 @@ angle::Result ProgramExecutableMtl::getSpecializedShader(
             NSString *depthWriteEnabledStr =
                 [NSString stringWithUTF8String:sh::mtl::kDepthWriteEnabledConstName];
 
-            funcConstants = mtl::adoptObjCObj([[MTLFunctionConstantValues alloc] init]);
+            funcConstants = angle::adoptObjCPtr([[MTLFunctionConstantValues alloc] init]);
             [funcConstants setConstantValue:&multisampledRendering
                                        type:MTLDataTypeBool
                                    withName:multisampledRenderingStr];
@@ -1044,12 +1031,8 @@ angle::Result ProgramExecutableMtl::getSpecializedShader(
         setConstantValue:&(context->getDisplay()->getFeatures().writeHelperSampleMask.enabled)
                     type:MTLDataTypeBool
                 withName:@"ANGLEWriteHelperSampleMask"];
-    // Create Metal shader object
-    ANGLE_MTL_OBJC_SCOPE
-    {
-        ANGLE_TRY(CreateMslShader(context, translatedMslInfo->metalLibrary, SHADER_ENTRY_NAME,
-                                  funcConstants.get(), &shaderVariant->metalShader));
-    }
+    ANGLE_TRY(CreateMslShader(context, translatedMslInfo->metalLibrary, SHADER_ENTRY_NAME,
+                              funcConstants.get(), &shaderVariant->metalShader));
 
     // Store reference to the translated source for easily querying mapped bindings later.
     shaderVariant->translatedSrcInfo = translatedMslInfo;

@@ -20,17 +20,22 @@ class MSLOutputTestBase : public MatchOutputCodeTest
   public:
     MSLOutputTestBase(GLenum shaderType) : MatchOutputCodeTest(shaderType, SH_MSL_METAL_OUTPUT)
     {
-        ShCompileOptions defaultCompileOptions = {};
+        setDefaultCompileOptions(defaultOptions());
+    }
+    static ShCompileOptions defaultOptions()
+    {
+        ShCompileOptions options = {};
         // Default options that are forced for MSL output.
-        defaultCompileOptions.rescopeGlobalVariables             = true;
-        defaultCompileOptions.simplifyLoopConditions             = true;
-        defaultCompileOptions.initializeUninitializedLocals      = true;
-        defaultCompileOptions.separateCompoundStructDeclarations = true;
+        options.rescopeGlobalVariables             = true;
+        options.simplifyLoopConditions             = true;
+        options.initializeUninitializedLocals      = true;
+        options.separateCompoundStructDeclarations = true;
+        options.removeInactiveVariables            = true;
         // The tests also test that validation succeeds. This should be also the
         // default forced option, but currently MSL backend does not generate
         // valid trees. Once validateAST is forced, move to above hunk.
-        defaultCompileOptions.validateAST = true;
-        setDefaultCompileOptions(defaultCompileOptions);
+        options.validateAST = true;
+        return options;
     }
 };
 
@@ -1022,4 +1027,91 @@ TEST_F(MSLOutputTest, MultisampleInterpolationNoCrash)
 precision highp float;
 in float i; out vec4 c; void main() { c = vec4(interpolateAtOffset(i, vec2(i))); })";
     compile(kShader);
+}
+
+TEST_F(MSLVertexOutputTest, ClipCullDistanceNoCrash)
+{
+    getResources()->ANGLE_clip_cull_distance = 1;
+    const char kShader[]                     = R"(#version 300 es
+#extension GL_ANGLE_clip_cull_distance : require
+void main() { gl_Position = vec4(0.0, 0.0, 0.0, 1.0); gl_ClipDistance[1] = 1.0;})";
+    compile(kShader);
+}
+
+TEST_F(MSLOutputTest, UnnamedOutParameterNoCrash)
+{
+    const char kShader[] = R"(void f(out int){}void main(){int a;f(a);})";
+    compile(kShader);
+}
+
+TEST_F(MSLOutputTest, ExplicitBoolCastsNoCrash)
+{
+    ShCompileOptions options     = defaultOptions();
+    const char kShader[]         = R"(
+precision mediump float;
+void main(){vec2 c;bvec2 U=bvec2(c.xx);if (U.x) gl_FragColor = vec4(1);})";
+    compile(kShader, options);
+}
+
+// The following tests check that the SeparateCompoundExpressions step during MSL shader translation
+// handles comma expressions correctly when at least one of the operands is a function call.
+TEST_F(MSLOutputTest, CommaOpTwoFunctionCallsWithGlobalsNoCrash)
+{
+    ShCompileOptions options = defaultOptions();
+    const char kShader[]     = R"(
+int g;
+void F(int v) { g = v; }
+void main() { F(g), F(g); })";
+    compile(kShader, options);
+}
+
+TEST_F(MSLOutputTest, CommaOpLeftFunctionCallWithGlobalsNoCrash)
+{
+    ShCompileOptions options = defaultOptions();
+    const char kShader[]     = R"(
+int g;
+void F(int v) { g = v; }
+void main() { F(g), F(1); })";
+    compile(kShader, options);
+}
+
+TEST_F(MSLOutputTest, CommaOpRightFunctionCallWithGlobalsNoCrash)
+{
+    ShCompileOptions options = defaultOptions();
+    const char kShader[]     = R"(
+int g;
+void F(int v) { g = v; }
+void main() { F(1), F(g); })";
+    compile(kShader, options);
+}
+
+TEST_F(MSLOutputTest, EnsureLoopForwardProgressInfinite)
+{
+    ShCompileOptions options          = defaultOptions();
+    options.ensureLoopForwardProgress = 1;
+    const std::string &shaderString =
+        R"(
+        precision mediump float;
+        void main() {
+            for (int i = 0; i < i + 1; ++i) { }
+            gl_FragColor = vec4(1);
+        })";
+    compile(shaderString, options);
+    ASSERT_TRUE(foundInCode(SH_MSL_METAL_OUTPUT, "loopForwardProgress();"));
+    ASSERT_TRUE(foundInCode(SH_MSL_METAL_OUTPUT, "volatile bool p = true;"));
+}
+
+TEST_F(MSLOutputTest, EnsureLoopForwardProgressFinite)
+{
+    ShCompileOptions options          = defaultOptions();
+    options.ensureLoopForwardProgress = 1;
+    const std::string &shaderString =
+        R"(
+        precision mediump float;
+        void main() {
+            for (int i = 0; i < 1; ++i) { }
+            gl_FragColor = vec4(1);
+        })";
+    compile(shaderString, options);
+    ASSERT_FALSE(foundInCode(SH_MSL_METAL_OUTPUT, "loopForwardProgress();"));
 }

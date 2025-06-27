@@ -10,13 +10,13 @@
 #include "common/system_utils.h"
 #include "compiler/translator/BaseTypes.h"
 #include "compiler/translator/ImmutableStringBuilder.h"
+#include "compiler/translator/Name.h"
 #include "compiler/translator/OutputTree.h"
 #include "compiler/translator/SymbolTable.h"
 #include "compiler/translator/msl/AstHelpers.h"
 #include "compiler/translator/msl/DebugSink.h"
 #include "compiler/translator/msl/EmitMetal.h"
 #include "compiler/translator/msl/Layout.h"
-#include "compiler/translator/msl/Name.h"
 #include "compiler/translator/msl/ProgramPrelude.h"
 #include "compiler/translator/msl/RewritePipelines.h"
 #include "compiler/translator/msl/TranslatorMSL.h"
@@ -523,6 +523,8 @@ static const char *GetOperatorString(TOperator op,
             return "metal::rint";
         case TOperator::EOpClamp:
             return "metal::clamp";  // TODO fast vs precise namespace
+        case TOperator::EOpLoopForwardProgress:
+            return "ANGLE_loopForwardProgress";
         case TOperator::EOpSaturate:
             return "metal::saturate";  // TODO fast vs precise namespace
         case TOperator::EOpMix:

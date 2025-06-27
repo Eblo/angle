@@ -305,7 +305,7 @@ TEST_P(OcclusionQueriesTestES3, UnresolveNotCounted)
 
     GLRenderbuffer depthMS;
     glBindRenderbuffer(GL_RENDERBUFFER, depthMS);
-    glRenderbufferStorageMultisample(GL_RENDERBUFFER, 4, GL_DEPTH_COMPONENT16, kSize, kSize);
+    glRenderbufferStorageMultisampleEXT(GL_RENDERBUFFER, 4, GL_DEPTH_COMPONENT16, kSize, kSize);
     glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, depthMS);
 
     EXPECT_GL_FRAMEBUFFER_COMPLETE(GL_FRAMEBUFFER);
@@ -749,8 +749,7 @@ TEST_P(OcclusionQueriesTest, MultiContext)
 
     // Test skipped because the D3D backends cannot support simultaneous queries on multiple
     // contexts yet.
-    ANGLE_SKIP_TEST_IF(GetParam() == ES2_D3D9() || GetParam() == ES2_D3D11() ||
-                       GetParam() == ES3_D3D11());
+    ANGLE_SKIP_TEST_IF(IsD3D());
 
     glDepthMask(GL_TRUE);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
@@ -767,9 +766,9 @@ TEST_P(OcclusionQueriesTest, MultiContext)
 
     EGLint contextAttributes[] = {
         EGL_CONTEXT_MAJOR_VERSION_KHR,
-        GetParam().majorVersion,
+        getClientMajorVersion(),
         EGL_CONTEXT_MINOR_VERSION_KHR,
-        GetParam().minorVersion,
+        getClientMinorVersion(),
         EGL_NONE,
     };
 
@@ -951,12 +950,58 @@ TEST_P(OcclusionQueriesTest, ManyQueriesInFlight)
     EXPECT_GL_NO_ERROR();
 }
 
-class OcclusionQueriesNoSurfaceTestES3 : public ANGLETestBase,
-                                         public ::testing::TestWithParam<angle::PlatformParameters>
+// Test two occlusion queries in sequence and there are some glBindFramebuffer in between.
+// This test provoked a bug that the second query been skipped.
+TEST_P(OcclusionQueriesTest, WrongSkippedQuery)
+{
+    ANGLE_SKIP_TEST_IF(getClientMajorVersion() < 3 &&
+                       !IsGLExtensionEnabled("GL_EXT_occlusion_query_boolean"));
+
+    GLRenderbuffer rbo;
+    glBindRenderbuffer(GL_RENDERBUFFER, rbo);
+    glRenderbufferStorage(GL_RENDERBUFFER, GL_RGBA8, 32, 32);
+
+    GLFramebuffer fbo;
+    glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+    glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_RENDERBUFFER, rbo);
+    EXPECT_GL_NO_ERROR();
+
+    GLQueryEXT query1;
+    // Draw square in 1st FBO, clear main framebuffer - main framebuffer is active after
+    glBeginQueryEXT(GL_ANY_SAMPLES_PASSED_EXT, query1);
+    glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+    drawQuad(mProgram, essl1_shaders::PositionAttrib(), 0.5f);
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    glClear(GL_DEPTH_BUFFER_BIT | GL_COLOR_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
+    glEndQueryEXT(GL_ANY_SAMPLES_PASSED_EXT);
+    EXPECT_GL_NO_ERROR();
+
+    GLQueryEXT query2;
+    // Draw square in FBO, clear main framebuffer - FBO is active after
+    glBeginQueryEXT(GL_ANY_SAMPLES_PASSED_EXT, query2);
+    glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+    drawQuad(mProgram, essl1_shaders::PositionAttrib(), 0.5f);
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    glClear(GL_DEPTH_BUFFER_BIT | GL_COLOR_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
+    glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+    glEndQueryEXT(GL_ANY_SAMPLES_PASSED_EXT);
+    EXPECT_GL_NO_ERROR();
+
+    GLuint results[2]  = {0};
+    GLuint expectation = GL_TRUE;
+    glGetQueryObjectuivEXT(query1, GL_QUERY_RESULT_EXT, &results[0]);
+    EXPECT_GL_NO_ERROR();
+    EXPECT_EQ(expectation, results[0]);
+
+    glGetQueryObjectuivEXT(query2, GL_QUERY_RESULT_EXT, &results[1]);
+    EXPECT_GL_NO_ERROR();
+    EXPECT_EQ(expectation, results[1]);
+}
+
+class OcclusionQueriesNoSurfaceTestES3 : public ANGLETest<>
 {
   protected:
-    OcclusionQueriesNoSurfaceTestES3()
-        : ANGLETestBase(GetParam()), mUnusedConfig(0), mUnusedDisplay(nullptr)
+    OcclusionQueriesNoSurfaceTestES3() : mUnusedConfig(0), mUnusedDisplay(nullptr)
     {
         setWindowWidth(kWidth);
         setWindowHeight(kHeight);
@@ -969,9 +1014,6 @@ class OcclusionQueriesNoSurfaceTestES3 : public ANGLETestBase,
 
     static constexpr int kWidth  = 300;
     static constexpr int kHeight = 300;
-
-    void SetUp() override { ANGLETestBase::ANGLETestSetUp(); }
-    void TearDown() override { ANGLETestBase::ANGLETestTearDown(); }
 
     void swapBuffers() override {}
 
@@ -992,9 +1034,9 @@ TEST_P(OcclusionQueriesNoSurfaceTestES3, SwitchingContextsWithQuery)
 
     EGLint contextAttributes[] = {
         EGL_CONTEXT_MAJOR_VERSION_KHR,
-        GetParam().majorVersion,
+        getClientMajorVersion(),
         EGL_CONTEXT_MINOR_VERSION_KHR,
-        GetParam().minorVersion,
+        getClientMinorVersion(),
         EGL_ROBUST_RESOURCE_INITIALIZATION_ANGLE,
         EGL_TRUE,
         EGL_NONE,

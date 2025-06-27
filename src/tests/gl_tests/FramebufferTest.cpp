@@ -10,6 +10,7 @@
 #include "common/mathutil.h"
 #include "platform/autogen/FeaturesD3D_autogen.h"
 #include "test_utils/ANGLETest.h"
+#include "test_utils/angle_test_configs.h"
 #include "test_utils/gl_raii.h"
 #include "util/OSWindow.h"
 
@@ -214,13 +215,24 @@ TEST_P(FramebufferFormatsTest, RGB8)
     testTextureFormat(GL_RGB8_OES, 8, 8, 8, 0);
 }
 
-TEST_P(FramebufferFormatsTest, BGRA8)
+// Test that BGRA8_EXT can be used as a framebuffer texture format
+TEST_P(FramebufferFormatsTest, BGRA8_EXT)
 {
     ANGLE_SKIP_TEST_IF(
         !IsGLExtensionEnabled("GL_EXT_texture_format_BGRA8888") ||
         (getClientMajorVersion() < 3 && !IsGLExtensionEnabled("GL_EXT_texture_storage")));
 
     testTextureFormat(GL_BGRA8_EXT, 8, 8, 8, 8);
+}
+
+// Test that BGRA_EXT can be used as a framebuffer texture format
+TEST_P(FramebufferFormatsTest, BGRA_EXT)
+{
+    ANGLE_SKIP_TEST_IF(
+        !IsGLExtensionEnabled("GL_EXT_texture_format_BGRA8888") ||
+        (getClientMajorVersion() < 3 && !IsGLExtensionEnabled("GL_EXT_texture_storage")));
+
+    testTextureFormat(GL_BGRA_EXT, 8, 8, 8, 8);
 }
 
 TEST_P(FramebufferFormatsTest, RGBA8)
@@ -230,6 +242,54 @@ TEST_P(FramebufferFormatsTest, RGBA8)
                         !IsGLExtensionEnabled("GL_EXT_texture_storage")));
 
     testTextureFormat(GL_RGBA8_OES, 8, 8, 8, 8);
+}
+
+// Test whether glRenderbufferStorage supports GL_BGRA_EXT.
+TEST_P(FramebufferFormatsTest, Renderbuffer_BGRA_EXT)
+{
+    ANGLE_SKIP_TEST_IF(!IsGLExtensionEnabled("GL_EXT_texture_format_BGRA8888"));
+
+    glGenRenderbuffers(1, &mRenderbuffer);
+    glBindRenderbuffer(GL_RENDERBUFFER, mRenderbuffer);
+    EXPECT_GL_NO_ERROR();
+
+    glRenderbufferStorage(GL_RENDERBUFFER, GL_BGRA_EXT, 128, 128);
+    EXPECT_GL_NO_ERROR();
+
+    GLFramebuffer fbo;
+    glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+    glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_RENDERBUFFER, mRenderbuffer);
+    EXPECT_GL_NO_ERROR();
+
+    EXPECT_GL_FRAMEBUFFER_COMPLETE(GL_FRAMEBUFFER);
+
+    glClearColor(0, 1, 0, 1);
+    glClear(GL_COLOR_BUFFER_BIT);
+    EXPECT_PIXEL_COLOR_EQ(0, 0, GLColor::green);
+}
+
+// Test whether glRenderbufferStorage supports GL_BGRA8_EXT.
+TEST_P(FramebufferFormatsTest, Renderbuffer_BGRA8_EXT)
+{
+    ANGLE_SKIP_TEST_IF(!IsGLExtensionEnabled("GL_EXT_texture_format_BGRA8888"));
+
+    glGenRenderbuffers(1, &mRenderbuffer);
+    glBindRenderbuffer(GL_RENDERBUFFER, mRenderbuffer);
+    EXPECT_GL_NO_ERROR();
+
+    glRenderbufferStorage(GL_RENDERBUFFER, GL_BGRA8_EXT, 128, 128);
+    EXPECT_GL_NO_ERROR();
+
+    GLFramebuffer fbo;
+    glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+    glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_RENDERBUFFER, mRenderbuffer);
+    EXPECT_GL_NO_ERROR();
+
+    EXPECT_GL_FRAMEBUFFER_COMPLETE(GL_FRAMEBUFFER);
+
+    glClearColor(0, 1, 0, 1);
+    glClear(GL_COLOR_BUFFER_BIT);
+    EXPECT_PIXEL_COLOR_EQ(0, 0, GLColor::green);
 }
 
 TEST_P(FramebufferFormatsTest, RenderbufferMultisample_DEPTH16)
@@ -364,6 +424,58 @@ TEST_P(FramebufferFormatsTest, ReadDrawCompleteness)
     EXPECT_PIXEL_COLOR_EQ(0, 0, GLColor::red);
 }
 
+// Test that a renderbuffer with RGBA8 format works as expected.
+TEST_P(FramebufferFormatsTest, RGBA8Renderbuffer)
+{
+    ANGLE_SKIP_TEST_IF(!IsGLExtensionEnabled("GL_ARM_rgba8"));
+    GLRenderbuffer rbo;
+    glBindRenderbuffer(GL_RENDERBUFFER, rbo);
+    glRenderbufferStorage(GL_RENDERBUFFER, GL_RGBA8, 16, 16);
+
+    GLFramebuffer fbo;
+    glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+    glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_RENDERBUFFER, rbo);
+
+    EXPECT_GLENUM_EQ(GL_FRAMEBUFFER_COMPLETE, glCheckFramebufferStatus(GL_FRAMEBUFFER));
+
+    ASSERT_GL_NO_ERROR();
+
+    glClearColor(1.0, 1.0, 1.0, 1.0);
+    glClear(GL_COLOR_BUFFER_BIT);
+    EXPECT_PIXEL_COLOR_EQ(0, 0, GLColor::white);
+}
+
+// Test that a framebuffer can be attached to an RGB8 and an RGBA8 renderbuffer and work.
+TEST_P(FramebufferFormatsTest, RGB8AndRGBA8Renderbuffers)
+{
+    ANGLE_SKIP_TEST_IF(!IsGLExtensionEnabled("GL_OES_rgb8_rgba8"));
+    GLRenderbuffer rbo1;
+    glBindRenderbuffer(GL_RENDERBUFFER, rbo1);
+    glRenderbufferStorage(GL_RENDERBUFFER, GL_RGB8, 16, 16);
+
+    GLRenderbuffer rbo2;
+    glBindRenderbuffer(GL_RENDERBUFFER, rbo2);
+    glRenderbufferStorage(GL_RENDERBUFFER, GL_RGBA8, 16, 16);
+
+    GLFramebuffer fbo;
+    glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+    glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_RENDERBUFFER, rbo1);
+    EXPECT_GLENUM_EQ(GL_FRAMEBUFFER_COMPLETE, glCheckFramebufferStatus(GL_FRAMEBUFFER));
+    ASSERT_GL_NO_ERROR();
+
+    glClearColor(1.0, 1.0, 1.0, 0.1);
+    glClear(GL_COLOR_BUFFER_BIT);
+    EXPECT_PIXEL_COLOR_EQ(0, 0, GLColor::white);
+
+    glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_RENDERBUFFER, rbo2);
+    EXPECT_GLENUM_EQ(GL_FRAMEBUFFER_COMPLETE, glCheckFramebufferStatus(GL_FRAMEBUFFER));
+    ASSERT_GL_NO_ERROR();
+
+    glClearColor(1.0, 0.0, 0.0, 1.0);
+    glClear(GL_COLOR_BUFFER_BIT);
+    EXPECT_PIXEL_COLOR_EQ(0, 0, GLColor::red);
+}
+
 // Test that a renderbuffer with RGB565 format works as expected. This test is intended for some
 // back-end having no support for native RGB565 renderbuffer and thus having to emulate using RGBA
 // format.
@@ -372,6 +484,8 @@ TEST_P(FramebufferFormatsTest, RGB565Renderbuffer)
     GLRenderbuffer rbo;
     glBindRenderbuffer(GL_RENDERBUFFER, rbo);
     glRenderbufferStorage(GL_RENDERBUFFER, GL_RGB565, 1, 1);
+    // Check if GL_RGB565 is valid to render buffer.
+    ASSERT_GL_NO_ERROR();
 
     GLFramebuffer completeFBO;
     glBindFramebuffer(GL_FRAMEBUFFER, completeFBO);
@@ -382,6 +496,72 @@ TEST_P(FramebufferFormatsTest, RGB565Renderbuffer)
     ASSERT_GL_NO_ERROR();
 
     glClearColor(1, 0, 0, 0.5f);
+    glClear(GL_COLOR_BUFFER_BIT);
+    EXPECT_PIXEL_COLOR_EQ(0, 0, GLColor::red);
+}
+
+// Test that a renderbuffer with RGBA4 format works as expected.
+TEST_P(FramebufferFormatsTest, RGBA4Renderbuffer)
+{
+    GLRenderbuffer rbo;
+    glBindRenderbuffer(GL_RENDERBUFFER, rbo);
+    glRenderbufferStorage(GL_RENDERBUFFER, GL_RGBA4, 1, 1);
+    // Check if GL_RGBA4 is valid to render buffer.
+    ASSERT_GL_NO_ERROR();
+
+    GLFramebuffer completeFBO;
+    glBindFramebuffer(GL_FRAMEBUFFER, completeFBO);
+    glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_RENDERBUFFER, rbo);
+
+    EXPECT_GLENUM_EQ(GL_FRAMEBUFFER_COMPLETE, glCheckFramebufferStatus(GL_FRAMEBUFFER));
+
+    ASSERT_GL_NO_ERROR();
+
+    glClearColor(1, 0, 0, 1);
+    glClear(GL_COLOR_BUFFER_BIT);
+    EXPECT_PIXEL_COLOR_EQ(0, 0, GLColor(255u, 0u, 0u, 255u));
+}
+
+// Test that a renderbuffer with RGB5_A1 format works as expected.
+TEST_P(FramebufferFormatsTest, RGB5A1Renderbuffer)
+{
+    GLRenderbuffer rbo;
+    glBindRenderbuffer(GL_RENDERBUFFER, rbo);
+    glRenderbufferStorage(GL_RENDERBUFFER, GL_RGB5_A1, 1, 1);
+    // Check if GL_RGB5_A1 is valid to render buffer.
+    ASSERT_GL_NO_ERROR();
+
+    GLFramebuffer completeFBO;
+    glBindFramebuffer(GL_FRAMEBUFFER, completeFBO);
+    glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_RENDERBUFFER, rbo);
+
+    EXPECT_GLENUM_EQ(GL_FRAMEBUFFER_COMPLETE, glCheckFramebufferStatus(GL_FRAMEBUFFER));
+
+    ASSERT_GL_NO_ERROR();
+
+    glClearColor(1, 0, 0, 1);
+    glClear(GL_COLOR_BUFFER_BIT);
+    EXPECT_PIXEL_COLOR_EQ(0, 0, GLColor(255u, 0u, 0u, 255u));
+}
+
+// Test that a renderbuffer with RGB8 format works as expected.
+TEST_P(FramebufferFormatsTest, RGB8Renderbuffer)
+{
+    GLRenderbuffer rbo;
+    glBindRenderbuffer(GL_RENDERBUFFER, rbo);
+    glRenderbufferStorage(GL_RENDERBUFFER, GL_RGB8, 1, 1);
+    // Check if GL_RGB8 is valid to render buffer.
+    ASSERT_GL_NO_ERROR();
+
+    GLFramebuffer completeFBO;
+    glBindFramebuffer(GL_FRAMEBUFFER, completeFBO);
+    glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_RENDERBUFFER, rbo);
+
+    EXPECT_GLENUM_EQ(GL_FRAMEBUFFER_COMPLETE, glCheckFramebufferStatus(GL_FRAMEBUFFER));
+
+    ASSERT_GL_NO_ERROR();
+
+    glClearColor(1, 0, 0, 0);
     glClear(GL_COLOR_BUFFER_BIT);
     EXPECT_PIXEL_COLOR_EQ(0, 0, GLColor::red);
 }
@@ -1003,6 +1183,39 @@ TEST_P(FramebufferTest_ES3, TextureAttachmentMipLevelsReadBack)
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_BASE_LEVEL, 1);
     glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, texture, 1);
     EXPECT_GL_FRAMEBUFFER_COMPLETE(GL_FRAMEBUFFER);
+    EXPECT_PIXEL_COLOR_EQ(0, 0, GLColor::green);
+
+    glClearColor(0, 0, 1.0f, 1.0f);
+    glClear(GL_COLOR_BUFFER_BIT);
+    EXPECT_PIXEL_COLOR_EQ(0, 0, GLColor::blue);
+}
+
+using FramebufferTest_ES3_WebGPU = FramebufferTest_ES3;
+
+// Tests reading from nonzero mip levels of a mipmap-complete texture.
+TEST_P(FramebufferTest_ES3_WebGPU, TextureAttachmentMipLevelsReadBackComplete)
+{
+    GLFramebuffer framebuffer;
+    glBindFramebuffer(GL_FRAMEBUFFER, framebuffer);
+
+    GLTexture texture;
+    glBindTexture(GL_TEXTURE_2D, texture);
+
+    const std::array<GLColor, 4 * 4> mip0Data = {
+        GLColor::red, GLColor::red, GLColor::red, GLColor::red, GLColor::red, GLColor::red,
+        GLColor::red, GLColor::red, GLColor::red, GLColor::red, GLColor::red, GLColor::red,
+        GLColor::red, GLColor::red, GLColor::red, GLColor::red};
+    const std::array<GLColor, 2 * 2> mip1Data = {GLColor::green, GLColor::green, GLColor::green,
+                                                 GLColor::green};
+    const std::array<GLColor, 1 * 1> mip2Data = {GLColor::blue};
+
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, 4, 4, 0, GL_RGBA, GL_UNSIGNED_BYTE, mip0Data.data());
+    glTexImage2D(GL_TEXTURE_2D, 1, GL_RGBA8, 2, 2, 0, GL_RGBA, GL_UNSIGNED_BYTE, mip1Data.data());
+    glTexImage2D(GL_TEXTURE_2D, 2, GL_RGBA8, 1, 1, 0, GL_RGBA, GL_UNSIGNED_BYTE, mip2Data.data());
+
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, texture, 1);
+    EXPECT_GL_FRAMEBUFFER_COMPLETE(GL_FRAMEBUFFER);
+    EXPECT_PIXEL_COLOR_EQ(0, 0, GLColor::green);
 
     glClearColor(0, 0, 1.0f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT);
@@ -4315,14 +4528,14 @@ void main()
     // 2. change the no-attachment framebuffer size to 2*2, draw
     // works properly
     GLFramebuffer framebufferWithVariousSizeGrow;
-    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, framebufferWithVariousSizeGrow);
+    glBindFramebuffer(GL_FRAMEBUFFER, framebufferWithVariousSizeGrow);
     for (int loop = 0; loop < 2; loop++)
     {
         GLuint defaultWidth  = 1 << loop;
         GLuint defaultHeight = 1 << loop;
-        glFramebufferParameteri(GL_DRAW_FRAMEBUFFER, GL_FRAMEBUFFER_DEFAULT_WIDTH, defaultWidth);
-        glFramebufferParameteri(GL_DRAW_FRAMEBUFFER, GL_FRAMEBUFFER_DEFAULT_HEIGHT, defaultHeight);
-        EXPECT_GLENUM_EQ(GL_FRAMEBUFFER_COMPLETE, glCheckFramebufferStatus(GL_DRAW_FRAMEBUFFER));
+        glFramebufferParameteri(GL_FRAMEBUFFER, GL_FRAMEBUFFER_DEFAULT_WIDTH, defaultWidth);
+        glFramebufferParameteri(GL_FRAMEBUFFER, GL_FRAMEBUFFER_DEFAULT_HEIGHT, defaultHeight);
+        EXPECT_GLENUM_EQ(GL_FRAMEBUFFER_COMPLETE, glCheckFramebufferStatus(GL_FRAMEBUFFER));
 
         // Draw and check the FBO size
         validateSamplePass(query, defaultWidth, defaultHeight);
@@ -4335,14 +4548,14 @@ void main()
     // 2. change the no-attachment framebuffer size to 1*1, draw
     // works properly
     GLFramebuffer framebufferWithVariousSizeShrink;
-    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, framebufferWithVariousSizeShrink);
+    glBindFramebuffer(GL_FRAMEBUFFER, framebufferWithVariousSizeShrink);
     for (int loop = 1; loop >= 0; loop--)
     {
         GLuint defaultWidth  = 1 << loop;
         GLuint defaultHeight = 1 << loop;
-        glFramebufferParameteri(GL_DRAW_FRAMEBUFFER, GL_FRAMEBUFFER_DEFAULT_WIDTH, defaultWidth);
-        glFramebufferParameteri(GL_DRAW_FRAMEBUFFER, GL_FRAMEBUFFER_DEFAULT_HEIGHT, defaultHeight);
-        EXPECT_GLENUM_EQ(GL_FRAMEBUFFER_COMPLETE, glCheckFramebufferStatus(GL_DRAW_FRAMEBUFFER));
+        glFramebufferParameteri(GL_FRAMEBUFFER, GL_FRAMEBUFFER_DEFAULT_WIDTH, defaultWidth);
+        glFramebufferParameteri(GL_FRAMEBUFFER, GL_FRAMEBUFFER_DEFAULT_HEIGHT, defaultHeight);
+        EXPECT_GLENUM_EQ(GL_FRAMEBUFFER_COMPLETE, glCheckFramebufferStatus(GL_FRAMEBUFFER));
 
         // Draw and check the FBO size
         validateSamplePass(query, defaultWidth, defaultHeight);
@@ -4717,6 +4930,8 @@ void main()
 // KHR-GLES32.core.draw_buffers_indexed.color_masks
 TEST_P(FramebufferTest_ES31, ClearWithColorMasksRGB5A1)
 {
+    ANGLE_SKIP_TEST_IF(!IsGLExtensionEnabled("GL_OES_draw_buffers_indexed"));
+
     constexpr int kSize  = 4;
     GLint maxDrawBuffers = 0;
     glGetIntegerv(GL_MAX_DRAW_BUFFERS, &maxDrawBuffers);
@@ -4763,22 +4978,22 @@ TEST_P(FramebufferTest_ES31, ClearWithColorMasksRGB5A1)
     {
         if (i % 4 == 0)
         {
-            glColorMaski(i, GL_TRUE, GL_FALSE, GL_FALSE, GL_FALSE);
+            glColorMaskiOES(i, GL_TRUE, GL_FALSE, GL_FALSE, GL_FALSE);
         }
 
         if (i % 4 == 1)
         {
-            glColorMaski(i, GL_FALSE, GL_TRUE, GL_FALSE, GL_FALSE);
+            glColorMaskiOES(i, GL_FALSE, GL_TRUE, GL_FALSE, GL_FALSE);
         }
 
         if (i % 4 == 2)
         {
-            glColorMaski(i, GL_FALSE, GL_FALSE, GL_TRUE, GL_FALSE);
+            glColorMaskiOES(i, GL_FALSE, GL_FALSE, GL_TRUE, GL_FALSE);
         }
 
         if (i % 4 == 3)
         {
-            glColorMaski(i, GL_FALSE, GL_FALSE, GL_FALSE, GL_TRUE);
+            glColorMaskiOES(i, GL_FALSE, GL_FALSE, GL_FALSE, GL_TRUE);
         }
     }
 
@@ -4847,7 +5062,7 @@ TEST_P(FramebufferTest_ES31, ClearWithColorMasksRGB5A1)
     // Set the framebuffer color mask back to default values
     for (int i = 0; i < maxDrawBuffers; ++i)
     {
-        glColorMaski(i, GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+        glColorMaskiOES(i, GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
     }
 
     ASSERT_GL_NO_ERROR();
@@ -8415,6 +8630,28 @@ TEST_P(FramebufferTest_ES31, InvalidateThenResolve)
     ASSERT_GL_NO_ERROR();
 }
 
+// Test framebuffer completeness with a mix of multisampled textures and renderbuffers.
+TEST_P(FramebufferTest_ES31, MixesMultisampleTextureRenderbuffer)
+{
+    GLFramebuffer mFramebuffer;
+    glBindFramebuffer(GL_FRAMEBUFFER, mFramebuffer);
+
+    GLRenderbuffer mRenderbuffer;
+    glBindRenderbuffer(GL_RENDERBUFFER, mRenderbuffer);
+    glRenderbufferStorageMultisample(GL_RENDERBUFFER, 4, GL_RGBA8, 1, 1);
+    glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_RENDERBUFFER, mRenderbuffer);
+
+    GLTexture mTexture;
+    glBindTexture(GL_TEXTURE_2D_MULTISAMPLE, mTexture);
+    glTexStorage2DMultisample(GL_TEXTURE_2D_MULTISAMPLE, 4, GL_DEPTH24_STENCIL8, 1, 1, true);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D_MULTISAMPLE, mTexture,
+                           0);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_STENCIL_ATTACHMENT, GL_TEXTURE_2D_MULTISAMPLE,
+                           mTexture, 0);
+    EXPECT_GL_FRAMEBUFFER_COMPLETE(GL_FRAMEBUFFER);
+    ASSERT_GL_NO_ERROR();
+}
+
 ANGLE_INSTANTIATE_TEST_ES2_AND(AddMockTextureNoRenderTargetTest,
                                ES2_D3D9().enable(Feature::AddMockTextureNoRenderTarget),
                                ES2_D3D11().enable(Feature::AddMockTextureNoRenderTarget));
@@ -8428,6 +8665,9 @@ ANGLE_INSTANTIATE_TEST_ES3_AND(FramebufferTest_ES3,
                                ES3_VULKAN().enable(Feature::EmulatedPrerotation90),
                                ES3_VULKAN().enable(Feature::EmulatedPrerotation180),
                                ES3_VULKAN().enable(Feature::EmulatedPrerotation270));
+
+GTEST_ALLOW_UNINSTANTIATED_PARAMETERIZED_TEST(FramebufferTest_ES3_WebGPU);
+ANGLE_INSTANTIATE_TEST(FramebufferTest_ES3_WebGPU, ES3_WEBGPU());
 
 GTEST_ALLOW_UNINSTANTIATED_PARAMETERIZED_TEST(FramebufferTest_ES3Metal);
 ANGLE_INSTANTIATE_TEST(FramebufferTest_ES3Metal,

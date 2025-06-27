@@ -31,21 +31,11 @@ constexpr vk::UseDebugLayers kUseDebugLayers = vk::UseDebugLayers::YesIfAvailabl
 constexpr vk::UseDebugLayers kUseDebugLayers = vk::UseDebugLayers::No;
 #endif
 
-std::string CreateExtensionString(const NameVersionVector &extList)
-{
-    std::string extensions;
-    for (const cl_name_version &ext : extList)
-    {
-        extensions += ext.name;
-        extensions += ' ';
-    }
-    if (!extensions.empty())
-    {
-        extensions.pop_back();
-    }
-    return extensions;
-}
-
+#if defined(ANGLE_OPENCL_COMPUTE_ONLY_PIPE)
+constexpr bool kUseComputeOnlyQueue = true;
+#else
+constexpr bool kUseComputeOnlyQueue = false;
+#endif
 }  // namespace
 
 angle::Result CLPlatformVk::initBackendRenderer()
@@ -61,9 +51,9 @@ angle::Result CLPlatformVk::initBackendRenderer()
     featureOverrides.enabled.push_back("hasBlobCacheThatEvictsOldItemsFirst");
     featureOverrides.disabled.push_back("verifyPipelineCacheInBlobCache");
 
-    ANGLE_TRY(mRenderer->initialize(this, this, angle::vk::ICD::Default, 0, 0, kUseDebugLayers,
-                                    getWSIExtension(), getWSILayer(), getWindowSystem(),
-                                    featureOverrides));
+    ANGLE_TRY(mRenderer->initialize(this, this, angle::vk::ICD::Default, 0, 0, nullptr, nullptr,
+                                    static_cast<VkDriverId>(0), kUseDebugLayers, getWSIExtension(),
+                                    getWSILayer(), getWindowSystem(), featureOverrides));
 
     return angle::Result::Continue;
 }
@@ -78,17 +68,17 @@ CLPlatformVk::~CLPlatformVk()
 CLPlatformImpl::Info CLPlatformVk::createInfo() const
 {
     NameVersionVector extList = {
-        cl_name_version{CL_MAKE_VERSION(3, 0, 0), "cl_khr_icd"},
-        cl_name_version{CL_MAKE_VERSION(3, 0, 0), "cl_khr_extended_versioning"}};
+        cl_name_version{CL_MAKE_VERSION(1, 0, 0), "cl_khr_icd"},
+        cl_name_version{CL_MAKE_VERSION(1, 0, 0), "cl_khr_extended_versioning"}};
 
     Info info;
     info.name.assign("ANGLE Vulkan");
     info.profile.assign("FULL_PROFILE");
     info.versionStr.assign(GetVersionString());
-    info.hostTimerRes          = 0u;
-    info.extensionsWithVersion = std::move(extList);
-    info.version               = GetVersion();
-    info.initializeExtensions(CreateExtensionString(extList));
+    info.hostTimerRes = 0u;
+    info.version      = GetVersion();
+
+    info.initializeVersionedExtensions(std::move(extList));
     return info;
 }
 
@@ -148,7 +138,7 @@ angle::Result CLPlatformVk::createContextFromType(cl::Context &context,
     {
         ANGLE_CL_RETURN_ERROR(CL_DEVICE_NOT_FOUND);
     }
-    else if (deviceType.intersects(CL_DEVICE_TYPE_GPU))
+    else if (deviceType.intersects(CL_DEVICE_TYPE_GPU | CL_DEVICE_TYPE_DEFAULT))
     {
         switch (vkPhysicalDeviceType)
         {
@@ -210,7 +200,7 @@ const std::string &CLPlatformVk::GetVersionString()
 }
 
 CLPlatformVk::CLPlatformVk(const cl::Platform &platform)
-    : CLPlatformImpl(platform), vk::Context(new vk::Renderer()), mBlobCache(1024 * 1024)
+    : CLPlatformImpl(platform), vk::ErrorContext(new vk::Renderer()), mBlobCache(1024 * 1024)
 {}
 
 void CLPlatformVk::handleError(VkResult result,
@@ -234,27 +224,14 @@ void CLPlatformVk::handleError(VkResult result,
 
 angle::NativeWindowSystem CLPlatformVk::getWindowSystem()
 {
-#if defined(ANGLE_ENABLE_VULKAN)
-#    if defined(ANGLE_PLATFORM_LINUX)
-#        if defined(ANGLE_USE_GBM)
-    return angle::NativeWindowSystem::Gbm;
-#        elif defined(ANGLE_USE_X11)
-    return angle::NativeWindowSystem::X11;
-#        elif defined(ANGLE_USE_WAYLAND)
-    return angle::NativeWindowSystem::Wayland;
-#        else
-    handleError(VK_ERROR_INCOMPATIBLE_DRIVER, __FILE__, __func__, __LINE__);
-    return angle::NativeWindowSystem::Other;
-#        endif
-#    elif defined(ANGLE_PLATFORM_ANDROID)
-    return angle::NativeWindowSystem::Other;
-#    else
-    handleError(VK_ERROR_INCOMPATIBLE_DRIVER, __FILE__, __func__, __LINE__);
-    return angle::NativeWindowSystem::Other;
-#    endif
-#elif
-    UNREACHABLE();
-#endif
+    if (kUseComputeOnlyQueue)
+    {
+        return angle::NativeWindowSystem::NullCompute;
+    }
+    else
+    {
+        return angle::NativeWindowSystem::Other;
+    }
 }
 
 const char *CLPlatformVk::getWSIExtension()

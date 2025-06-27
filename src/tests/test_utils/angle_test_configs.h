@@ -206,12 +206,6 @@ PlatformParameters ES3_METAL();
 PlatformParameters ES2_WGL();
 PlatformParameters ES3_WGL();
 
-PlatformParameters ES1_EGL();
-PlatformParameters ES2_EGL();
-PlatformParameters ES3_EGL();
-PlatformParameters ES31_EGL();
-PlatformParameters ES32_EGL();
-
 PlatformParameters ES1_ANGLE_Vulkan_Secondaries();
 PlatformParameters ES2_ANGLE_Vulkan_Secondaries();
 PlatformParameters ES3_ANGLE_Vulkan_Secondaries();
@@ -219,6 +213,7 @@ PlatformParameters ES31_ANGLE_Vulkan_Secondaries();
 PlatformParameters ES32_ANGLE_Vulkan_Secondaries();
 
 PlatformParameters ES2_WEBGPU();
+PlatformParameters ES3_WEBGPU();
 
 PlatformParameters ES1_Zink();
 PlatformParameters ES2_Zink();

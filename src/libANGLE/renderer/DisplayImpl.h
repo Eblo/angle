@@ -117,15 +117,24 @@ class DisplayImpl : public EGLImplFactory, public angle::Subject
 
     virtual egl::Error waitUntilWorkScheduled();
 
+    virtual void lockVulkanQueue() { UNREACHABLE(); }
+    virtual void unlockVulkanQueue() { UNREACHABLE(); }
+
     virtual angle::NativeWindowSystem getWindowSystem() const;
 
-    virtual bool supportsDmaBufFormat(EGLint format) const;
+    virtual bool supportsDmaBufFormat(EGLint format);
     virtual egl::Error queryDmaBufFormats(EGLint max_formats, EGLint *formats, EGLint *num_formats);
     virtual egl::Error queryDmaBufModifiers(EGLint format,
                                             EGLint max_modifiers,
                                             EGLuint64KHR *modifiers,
                                             EGLBoolean *external_only,
                                             EGLint *num_modifiers);
+
+    virtual egl::Error querySupportedCompressionRates(const egl::Config *configuration,
+                                                      const egl::AttributeMap &attributes,
+                                                      EGLint *rates,
+                                                      EGLint rate_size,
+                                                      EGLint *num_rates) const;
 
   protected:
     const egl::DisplayState &mState;

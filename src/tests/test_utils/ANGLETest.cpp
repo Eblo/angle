@@ -171,10 +171,8 @@ bool gReuseDisplays = false;
 
 bool ShouldAlwaysForceNewDisplay(const PlatformParameters &params)
 {
-    // When running WebGPU tests on linux always force a new display. The underlying vulkan swap
-    // chain appears to fail to get a new image after swapping when rapidly creating new swap chains
-    // for an existing window.
-    if (params.isWebGPU() && IsLinux())
+    // When running WebGPU tests always force a new display.
+    if (params.isWebGPU())
     {
         return true;
     }
@@ -188,6 +186,19 @@ bool ShouldAlwaysForceNewDisplay(const PlatformParameters &params)
     SystemInfo *systemInfo = GetTestSystemInfo();
     return (!systemInfo || !IsWindows() || systemInfo->hasAMDGPU());
 }
+
+bool ShouldAlwaysForceNewWindow(const PlatformParameters &params)
+{
+    // The WebGPU underlying vulkan and D3D swap chain appears to fail to get a new image after
+    // swapping when rapidly creating new swap chains for an existing window.
+    if (params.isWebGPU())
+    {
+        return true;
+    }
+
+    return false;
+}
+}  // anonymous namespace
 
 GPUTestConfig::API GetTestConfigAPIFromRenderer(angle::GLESDriverType driverType,
                                                 EGLenum renderer,
@@ -227,7 +238,6 @@ GPUTestConfig::API GetTestConfigAPIFromRenderer(angle::GLESDriverType driverType
             return GPUTestConfig::kAPIUnknown;
     }
 }
-}  // anonymous namespace
 
 GLColorRGB::GLColorRGB(const Vector3 &floatColor)
     : R(ColorDenorm(floatColor.x())), G(ColorDenorm(floatColor.y())), B(ColorDenorm(floatColor.z()))
@@ -368,6 +378,14 @@ GLColor32F ReadColor32F(GLint x, GLint y)
 void LoadEntryPointsWithUtilLoader(angle::GLESDriverType driverType)
 {
 #if defined(ANGLE_USE_UTIL_LOADER)
+    Library *driverLibrary = ANGLETestEnvironment::GetDriverLibrary(driverType);
+    if (driverLibrary == nullptr)
+    {
+        WriteDebugMessage("Failed to load library! (driverType = %d)",
+                          static_cast<int>(driverType));
+        return;
+    }
+
     PFNEGLGETPROCADDRESSPROC getProcAddress;
     ANGLETestEnvironment::GetDriverLibrary(driverType)->getAs("eglGetProcAddress", &getProcAddress);
     ASSERT(nullptr != getProcAddress);
@@ -430,12 +448,6 @@ void SetTestStartDelay(const char *testStartDelay)
     gTestStartDelaySeconds = std::stoi(testStartDelay);
 }
 
-#if defined(ANGLE_TEST_ENABLE_RENDERDOC_CAPTURE)
-bool gEnableRenderDocCapture = true;
-#else
-bool gEnableRenderDocCapture = false;
-#endif
-
 // static
 std::array<Vector3, 6> ANGLETestBase::GetQuadVertices()
 {
@@ -472,6 +484,20 @@ testing::AssertionResult AssertEGLEnumsEqual(const char *lhsExpr,
     }
 }
 
+void *ANGLETestBase::operator new(size_t size)
+{
+    void *ptr = malloc(size ? size : size + 1);
+    // Initialize integer primitives to large positive values to avoid tests relying
+    // on the assumption that primitives (e.g. GLuint) would be zero-initialized.
+    memset(ptr, 0x7f, size);
+    return ptr;
+}
+
+void ANGLETestBase::operator delete(void *ptr)
+{
+    free(ptr);
+}
+
 ANGLETestBase::ANGLETestBase(const PlatformParameters &params)
     : mWidth(16),
       mHeight(16),
@@ -480,6 +506,7 @@ ANGLETestBase::ANGLETestBase(const PlatformParameters &params)
       mQuadIndexBuffer(0),
       m2DTexturedQuadProgram(0),
       m3DTexturedQuadProgram(0),
+      m2DArrayTexturedQuadProgram(0),
       mDeferContextInit(false),
       mAlwaysForceNewDisplay(ShouldAlwaysForceNewDisplay(params)),
       mForceNewDisplay(mAlwaysForceNewDisplay),
@@ -609,6 +636,10 @@ ANGLETestBase::~ANGLETestBase()
     {
         glDeleteProgram(m3DTexturedQuadProgram);
     }
+    if (m2DArrayTexturedQuadProgram)
+    {
+        glDeleteProgram(m2DArrayTexturedQuadProgram);
+    }
 
     if (!mSetUpCalled)
     {
@@ -688,10 +719,22 @@ void ANGLETestBase::ANGLETestSetUp()
         SetupEnvironmentVarsForCaptureReplay();
     }
 
+    if (ShouldAlwaysForceNewWindow(*mCurrentParams))
+    {
+        OSWindow::Delete(&mFixture->osWindow);
+        initOSWindow();
+    }
+
     if (!mFixture->osWindow->valid())
     {
         mIsSetUp = true;
         return;
+    }
+
+    // WGL tests are currently disabled.
+    if (mFixture->wglWindow)
+    {
+        FAIL() << "Unsupported driver.";
     }
 
     // Resize the window before creating the context so that the first make current
@@ -723,58 +766,72 @@ void ANGLETestBase::ANGLETestSetUp()
         }
         needSwap = true;
     }
-    // WGL tests are currently disabled.
-    if (mFixture->wglWindow)
+
+    Library *driverLib = ANGLETestEnvironment::GetDriverLibrary(mCurrentParams->driver);
+
+    // Overriding ANGLE features requires the extension EGL_ANGLE_feature_control.
+    // Only allow skipping tests due to unsupported ANGLE extensions when testing the system EGL,
+    // since we want it to be obvious if ANGLE itself stops exposing them.
+    // Must be checked before initializing the Display, since
+    if (isDriverSystemEgl())
     {
-        FAIL() << "Unsupported driver.";
+        if ((!mCurrentParams->eglParameters.enabledFeatureOverrides.empty() ||
+             !mCurrentParams->eglParameters.disabledFeatureOverrides.empty()) &&
+            !IsEGLClientExtensionEnabled("EGL_ANGLE_feature_control"))
+        {
+            GTEST_SKIP() << "Test skipped because EGL_ANGLE_feature_control is not available.";
+        }
     }
-    else
+
+    if (mForceNewDisplay || !mFixture->eglWindow->isDisplayInitialized())
     {
-        Library *driverLib = ANGLETestEnvironment::GetDriverLibrary(mCurrentParams->driver);
-
-        if (mForceNewDisplay || !mFixture->eglWindow->isDisplayInitialized())
+        mFixture->eglWindow->destroyGL();
+        if (!mFixture->eglWindow->initializeDisplay(mFixture->osWindow, driverLib,
+                                                    mCurrentParams->driver,
+                                                    mCurrentParams->eglParameters))
         {
-            mFixture->eglWindow->destroyGL();
-            if (!mFixture->eglWindow->initializeDisplay(mFixture->osWindow, driverLib,
-                                                        mCurrentParams->driver,
-                                                        mCurrentParams->eglParameters))
-            {
-                FAIL() << "EGL Display init failed.";
-            }
+            FAIL() << "EGL Display init failed.";
         }
-        else if (mCurrentParams->eglParameters != mFixture->eglWindow->getPlatform())
-        {
-            FAIL() << "Internal parameter conflict error.";
-        }
+    }
+    else if (mCurrentParams->eglParameters != mFixture->eglWindow->getPlatform())
+    {
+        FAIL() << "Internal parameter conflict error.";
+    }
 
-        const GLWindowResult windowResult = mFixture->eglWindow->initializeSurface(
-            mFixture->osWindow, driverLib, mFixture->configParams);
+    // Skip tests that require unsupported ANGLE extensions.
+    checkUnsupportedExtensions();
+    if (IsSkipped())
+    {
+        return;
+    }
 
-        if (windowResult != GLWindowResult::NoError)
-        {
-            if (windowResult != GLWindowResult::Error)
-            {
-                // If the test requests an extension that isn't supported, automatically skip the
-                // test.
-                GTEST_SKIP() << "Test skipped due to missing extension";
-            }
-            else if (mFixture->configParams.multisample)
-            {
-                // If the test requests a multisampled window that isn't supported, automatically
-                // skip the test.
-                GTEST_SKIP() << "Test skipped due to no multisampled configs available";
-            }
-            else
-            {
-                // Otherwise fail the test.
-                FAIL() << "egl surface init failed.";
-            }
-        }
+    const GLWindowResult windowResult = mFixture->eglWindow->initializeSurface(
+        mFixture->osWindow, driverLib, mFixture->configParams);
 
-        if (!mDeferContextInit && !mFixture->eglWindow->initializeContext())
+    if (windowResult != GLWindowResult::NoError)
+    {
+        if (windowResult != GLWindowResult::Error)
         {
-            FAIL() << "GL Context init failed.";
+            // If the test requests an extension that isn't supported, automatically skip the
+            // test.
+            GTEST_SKIP() << "Test skipped due to missing extension";
         }
+        else if (mFixture->configParams.multisample)
+        {
+            // If the test requests a multisampled window that isn't supported, automatically
+            // skip the test.
+            GTEST_SKIP() << "Test skipped due to no multisampled configs available";
+        }
+        else
+        {
+            // Otherwise fail the test.
+            FAIL() << "egl surface init failed.";
+        }
+    }
+
+    if (!mDeferContextInit && !mFixture->eglWindow->initializeContext())
+    {
+        FAIL() << "GL Context init failed.";
     }
 
     if (needSwap)
@@ -793,6 +850,57 @@ void ANGLETestBase::ANGLETestSetUp()
     mIsSetUp = true;
 
     mRenderDoc.startFrame();
+}
+
+void ANGLETestBase::checkUnsupportedExtensions()
+{
+    // Only allow skipping tests due to unsupported ANGLE extensions when testing the system EGL,
+    // since we want it to be obvious if ANGLE itself stops exposing them.
+    if (mCurrentParams->driver != GLESDriverType::SystemEGL)
+    {
+        return;
+    }
+
+    if (mFixture->configParams.webGLCompatibility &&
+        !IsEGLDisplayExtensionEnabled(mFixture->eglWindow->getDisplay(),
+                                      "EGL_ANGLE_create_context_webgl_compatibility"))
+    {
+        GTEST_SKIP()
+            << "Test skipped due to EGL_ANGLE_create_context_webgl_compatibility not available";
+    }
+    if (mFixture->configParams.robustResourceInit &&
+        !IsEGLDisplayExtensionEnabled(mFixture->eglWindow->getDisplay(),
+                                      "EGL_ANGLE_robust_resource_initialization"))
+    {
+        GTEST_SKIP()
+            << "Test skipped due to EGL_ANGLE_robust_resource_initialization not available";
+    }
+    if (!mFixture->configParams.extensionsEnabled &&
+        !IsEGLDisplayExtensionEnabled(mFixture->eglWindow->getDisplay(),
+                                      "EGL_ANGLE_create_context_extensions_enabled"))
+    {
+        GTEST_SKIP()
+            << "Test skipped due to EGL_ANGLE_create_context_extensions_enabled not available";
+    }
+    if (!mFixture->configParams.bindGeneratesResource &&
+        !IsEGLDisplayExtensionEnabled(mFixture->eglWindow->getDisplay(),
+                                      "EGL_CHROMIUM_create_context_bind_generates_resource"))
+    {
+        GTEST_SKIP() << "Test skipped due to "
+                        "EGL_CHROMIUM_create_context_bind_generates_resource not available";
+    }
+    if (!mFixture->configParams.clientArraysEnabled &&
+        !IsEGLDisplayExtensionEnabled(mFixture->eglWindow->getDisplay(),
+                                      "EGL_ANGLE_create_context_client_arrays"))
+    {
+        GTEST_SKIP() << "Test skipped due to EGL_ANGLE_create_context_client_arrays not available";
+    }
+    if (!mFixture->configParams.contextProgramCacheEnabled &&
+        !IsEGLDisplayExtensionEnabled(mFixture->eglWindow->getDisplay(),
+                                      "EGL_ANGLE_program_cache_control"))
+    {
+        GTEST_SKIP() << "Test skipped due to EGL_ANGLE_program_cache_control not available";
+    }
 }
 
 void ANGLETestBase::ANGLETestPreTearDown()
@@ -815,7 +923,7 @@ void ANGLETestBase::ANGLETestTearDown()
         WriteDebugMessage("Exiting %s.%s\n", info->test_suite_name(), info->name());
     }
 
-    if (mCurrentParams->noFixture || !mFixture->osWindow->valid())
+    if (mCurrentParams->noFixture || !mFixture->osWindow || !mFixture->osWindow->valid())
     {
         mRenderDoc.endFrame();
         return;
@@ -848,12 +956,17 @@ void ANGLETestBase::ANGLETestTearDown()
     }
 
     Event myEvent;
-    while (mFixture->osWindow->popEvent(&myEvent))
+    while (mFixture->osWindow && mFixture->osWindow->popEvent(&myEvent))
     {
         if (myEvent.Type == Event::EVENT_CLOSED)
         {
             exit(0);
         }
+    }
+
+    if (ShouldAlwaysForceNewWindow(*mCurrentParams))
+    {
+        OSWindow::Delete(&mFixture->osWindow);
     }
 }
 
@@ -1119,8 +1232,7 @@ void ANGLETestBase::drawIndexedQuad(GLuint program,
                                     GLfloat positionAttribZ,
                                     GLfloat positionAttribXYScale)
 {
-    ASSERT(!mFixture || !mFixture->configParams.webGLCompatibility.valid() ||
-           !mFixture->configParams.webGLCompatibility.value());
+    ASSERT(!mFixture || !mFixture->configParams.webGLCompatibility);
     drawIndexedQuad(program, positionAttribName, positionAttribZ, positionAttribXYScale, false);
 }
 
@@ -1259,6 +1371,40 @@ void main()
     return m3DTexturedQuadProgram;
 }
 
+GLuint ANGLETestBase::get2DArrayTexturedQuadProgram()
+{
+    if (m2DArrayTexturedQuadProgram)
+    {
+        return m2DArrayTexturedQuadProgram;
+    }
+
+    constexpr char kVS[] = R"(#version 300 es
+in vec2 position;
+out vec2 texCoord;
+void main()
+{
+    gl_Position = vec4(position, 0, 1);
+    texCoord = position * 0.5 + vec2(0.5);
+})";
+
+    constexpr char kFS[] = R"(#version 300 es
+precision highp float;
+
+in vec2 texCoord;
+out vec4 my_FragColor;
+
+uniform highp sampler2DArray tex;
+uniform float u_layer;
+
+void main()
+{
+    my_FragColor = texture(tex, vec3(texCoord, u_layer));
+})";
+
+    m2DArrayTexturedQuadProgram = CompileProgram(kVS, kFS);
+    return m2DArrayTexturedQuadProgram;
+}
+
 void ANGLETestBase::draw2DTexturedQuad(GLfloat positionAttribZ,
                                        GLfloat positionAttribXYScale,
                                        bool useVertexBuffer)
@@ -1274,6 +1420,29 @@ void ANGLETestBase::draw3DTexturedQuad(GLfloat positionAttribZ,
                                        float layer)
 {
     GLuint program = get3DTexturedQuadProgram();
+    ASSERT_NE(0u, program);
+    GLint activeProgram = 0;
+    glGetIntegerv(GL_CURRENT_PROGRAM, &activeProgram);
+    if (static_cast<GLuint>(activeProgram) != program)
+    {
+        glUseProgram(program);
+    }
+    glUniform1f(glGetUniformLocation(program, "u_layer"), layer);
+
+    drawQuad(program, "position", positionAttribZ, positionAttribXYScale, useVertexBuffer);
+
+    if (static_cast<GLuint>(activeProgram) != program)
+    {
+        glUseProgram(static_cast<GLuint>(activeProgram));
+    }
+}
+
+void ANGLETestBase::draw2DArrayTexturedQuad(GLfloat positionAttribZ,
+                                            GLfloat positionAttribXYScale,
+                                            bool useVertexBuffer,
+                                            float layer)
+{
+    GLuint program = get2DArrayTexturedQuadProgram();
     ASSERT_NE(0u, program);
     GLint activeProgram = 0;
     glGetIntegerv(GL_CURRENT_PROGRAM, &activeProgram);

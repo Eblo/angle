@@ -21,6 +21,7 @@
 #include "common/system_utils.h"
 #include "common/vector_utils.h"
 #include "platform/PlatformMethods.h"
+#include "test_expectations/GPUTestConfig.h"
 #include "util/EGLWindow.h"
 #include "util/shader_utils.h"
 #include "util/util_gl.h"
@@ -231,6 +232,10 @@ constexpr std::array<GLenum, 6> kCubeFaces = {
 void LoadEntryPointsWithUtilLoader(angle::GLESDriverType driver);
 
 bool IsFormatEmulated(GLenum target);
+
+GPUTestConfig::API GetTestConfigAPIFromRenderer(angle::GLESDriverType driverType,
+                                                EGLenum renderer,
+                                                EGLenum deviceType);
 }  // namespace angle
 
 #define EXPECT_PIXEL_EQ(x, y, r, g, b, a) \
@@ -390,7 +395,7 @@ struct TestPlatformContext final : private angle::NonCopyable
     ANGLETestBase *currentTest = nullptr;
 };
 
-class ANGLETestBase
+class ANGLETestBase : public ::testing::Test
 {
   protected:
     ANGLETestBase(const angle::PlatformParameters &params);
@@ -412,10 +417,15 @@ class ANGLETestBase
         return mCurrentParams->eglParameters.debugLayersEnabled != EGL_FALSE;
     }
 
+    void *operator new(size_t size);
+    void operator delete(void *ptr);
+
   protected:
     void ANGLETestSetUp();
+    void ANGLETestSetUpCL();
     void ANGLETestPreTearDown();
     void ANGLETestTearDown();
+    void ANGLETestTearDownCL();
 
     virtual void swapBuffers();
 
@@ -484,6 +494,12 @@ class ANGLETestBase
                             bool useVertexBuffer,
                             float layer);
 
+    // The layer parameter chooses the 2DArray texture layer to sample from.
+    void draw2DArrayTexturedQuad(GLfloat positionAttribZ,
+                                 GLfloat positionAttribXYScale,
+                                 bool useVertexBuffer,
+                                 float layer);
+
     void setWindowWidth(int width);
     void setWindowHeight(int height);
     void setConfigRedBits(int bits);
@@ -530,6 +546,9 @@ class ANGLETestBase
     // Has a float uniform "u_layer" to choose the 3D texture layer.
     GLuint get3DTexturedQuadProgram();
 
+    // Has a float uniform "u_layer" to choose the 2DArray texture layer.
+    GLuint get2DArrayTexturedQuadProgram();
+
     class [[nodiscard]] ScopedIgnorePlatformMessages : angle::NonCopyable
     {
       public:
@@ -564,12 +583,20 @@ class ANGLETestBase
                mCurrentParams->isSwiftshader();
     }
 
+    bool isDriverSystemEgl() const
+    {
+        return mCurrentParams->driver == angle::GLESDriverType::SystemEGL;
+    }
+
+    angle::GLESDriverType getDriverType() const { return mCurrentParams->driver; }
+
     bool platformSupportsMultithreading() const;
 
     bool mIsSetUp = false;
 
   private:
     void checkD3D11SDKLayersMessages();
+    void checkUnsupportedExtensions();
 
     void drawQuad(GLuint program,
                   const std::string &positionAttribName,
@@ -606,6 +633,7 @@ class ANGLETestBase
     // Used for texture rendering.
     GLuint m2DTexturedQuadProgram;
     GLuint m3DTexturedQuadProgram;
+    GLuint m2DArrayTexturedQuadProgram;
 
     bool mDeferContextInit;
     bool mAlwaysForceNewDisplay;
@@ -636,7 +664,7 @@ class ANGLETestBase
 };
 
 template <typename Params = angle::PlatformParameters>
-class ANGLETest : public ANGLETestBase, public ::testing::TestWithParam<Params>
+class ANGLETest : public ANGLETestBase, public ::testing::WithParamInterface<Params>
 {
   protected:
     ANGLETest();
@@ -654,6 +682,7 @@ class ANGLETest : public ANGLETestBase, public ::testing::TestWithParam<Params>
     void SetUp() final
     {
         ANGLETestBase::ANGLETestSetUp();
+
         if (mIsSetUp)
         {
             testSetUp();
@@ -712,5 +741,7 @@ class ANGLETestEnvironment : public testing::Environment
 };
 
 extern angle::PlatformMethods gDefaultPlatformMethods;
+
+int GetTestStartDelaySeconds();
 
 #endif  // ANGLE_TESTS_ANGLE_TEST_H_

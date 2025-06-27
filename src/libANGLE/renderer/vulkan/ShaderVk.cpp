@@ -80,12 +80,6 @@ std::shared_ptr<ShaderTranslateTask> ShaderVk::compile(const gl::Context *contex
         options->forceShaderPrecisionHighpToMediump = true;
     }
 
-    // Let compiler use specialized constant for pre-rotation.
-    if (!contextVk->getFeatures().preferDriverUniformOverSpecConst.enabled)
-    {
-        options->useSpecializationConstant = true;
-    }
-
     if (contextVk->getFeatures().clampFragDepth.enabled)
     {
         options->clampFragDepth = true;
@@ -140,6 +134,12 @@ std::shared_ptr<ShaderTranslateTask> ShaderVk::compile(const gl::Context *contex
     {
         options->emulateR32fImageAtomicExchange = true;
     }
+
+    // https://issuetracker.google.com/406827038
+    // Unconditionally set this option to true for the Vulkan backend
+    options->preserveDenorms = true;
+
+    options->removeInactiveVariables = true;
 
     // The Vulkan backend needs no post-processing of the translated shader.
     return std::shared_ptr<ShaderTranslateTask>(new ShaderTranslateTask);
@@ -225,7 +225,7 @@ std::string ShaderVk::getDebugInfo() const
     }
 
     blob << R"(
-Paste the following SPIR-V binary in https://www.khronos.org/spir/visualizer/
+Paste the following SPIR-V binary in https://www.khronos.org/spir/visualizer/ or pass to a recent build of `spirv-dis` (optionally with `--comment --nested-indent`)
 
 Setting the environment variable ANGLE_FEATURE_OVERRIDES_ENABLED=retainSPIRVDebugInfo will retain debug info
 

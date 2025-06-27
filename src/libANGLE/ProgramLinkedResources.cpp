@@ -1606,6 +1606,22 @@ void AtomicCounterBufferLinker::link(const std::map<int, unsigned int> &sizeMap)
     }
 }
 
+PixelLocalStorageLinker::PixelLocalStorageLinker() = default;
+
+PixelLocalStorageLinker::~PixelLocalStorageLinker() = default;
+
+void PixelLocalStorageLinker::init(
+    std::vector<ShPixelLocalStorageFormat> *pixelLocalStorageFormatsOut)
+{
+    mPixelLocalStorageFormatsOut = pixelLocalStorageFormatsOut;
+}
+
+void PixelLocalStorageLinker::link(
+    const std::vector<ShPixelLocalStorageFormat> &pixelLocalStorageFormats) const
+{
+    *mPixelLocalStorageFormatsOut = pixelLocalStorageFormats;
+}
+
 LinkingVariables::LinkingVariables()  = default;
 LinkingVariables::~LinkingVariables() = default;
 
@@ -1642,19 +1658,22 @@ void LinkingVariables::initForProgramPipeline(const ProgramPipelineState &state)
 ProgramLinkedResources::ProgramLinkedResources()  = default;
 ProgramLinkedResources::~ProgramLinkedResources() = default;
 
-void ProgramLinkedResources::init(std::vector<InterfaceBlock> *uniformBlocksOut,
-                                  std::vector<LinkedUniform> *uniformsOut,
-                                  std::vector<std::string> *uniformNamesOut,
-                                  std::vector<std::string> *uniformMappedNamesOut,
-                                  std::vector<InterfaceBlock> *shaderStorageBlocksOut,
-                                  std::vector<BufferVariable> *bufferVariablesOut,
-                                  std::vector<AtomicCounterBuffer> *atomicCounterBuffersOut)
+void ProgramLinkedResources::init(
+    std::vector<InterfaceBlock> *uniformBlocksOut,
+    std::vector<LinkedUniform> *uniformsOut,
+    std::vector<std::string> *uniformNamesOut,
+    std::vector<std::string> *uniformMappedNamesOut,
+    std::vector<InterfaceBlock> *shaderStorageBlocksOut,
+    std::vector<BufferVariable> *bufferVariablesOut,
+    std::vector<AtomicCounterBuffer> *atomicCounterBuffersOut,
+    std::vector<ShPixelLocalStorageFormat> *pixelLocalStorageFormatsOut)
 {
     uniformBlockLinker.init(uniformBlocksOut, uniformsOut, uniformNamesOut, uniformMappedNamesOut,
                             &unusedInterfaceBlocks);
     shaderStorageBlockLinker.init(shaderStorageBlocksOut, bufferVariablesOut,
                                   &unusedInterfaceBlocks);
     atomicCounterBufferLinker.init(atomicCounterBuffersOut);
+    pixelLocalStorageLinker.init(pixelLocalStorageFormatsOut);
 }
 
 void ProgramLinkedResourcesLinker::linkResources(const ProgramState &programState,
@@ -1715,6 +1734,13 @@ void ProgramLinkedResourcesLinker::linkResources(const ProgramState &programStat
     std::map<int, unsigned int> sizeMap;
     getAtomicCounterBufferSizeMap(programState.getExecutable(), sizeMap);
     resources.atomicCounterBufferLinker.link(sizeMap);
+
+    const gl::SharedCompiledShaderState &fragmentShader =
+        programState.getAttachedShader(gl::ShaderType::Fragment);
+    if (fragmentShader != nullptr)
+    {
+        resources.pixelLocalStorageLinker.link(fragmentShader->pixelLocalStorageFormats);
+    }
 }
 
 void ProgramLinkedResourcesLinker::getAtomicCounterBufferSizeMap(
@@ -1731,9 +1757,9 @@ void ProgramLinkedResourcesLinker::getAtomicCounterBufferSizeMap(
         // binding. The end of the uniform is calculated by finding the initial offset of the
         // uniform and adding size of the uniform. For arrays, the size is the number of elements
         // times the element size (should always by 4 for atomic_units).
-        unsigned dataOffset =
-            glUniform.getOffset() + static_cast<unsigned int>(glUniform.getBasicTypeElementCount() *
-                                                              glUniform.getElementSize());
+        unsigned dataOffset = glUniform.getBlockOffset() +
+                              static_cast<unsigned int>(glUniform.getBasicTypeElementCount() *
+                                                        glUniform.getElementSize());
         if (dataOffset > bufferDataSize)
         {
             bufferDataSize = dataOffset;

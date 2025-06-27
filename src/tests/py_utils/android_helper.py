@@ -10,6 +10,7 @@ import json
 import logging
 import os
 import pathlib
+import platform
 import posixpath
 import random
 import re
@@ -19,6 +20,7 @@ import tarfile
 import tempfile
 import threading
 import time
+import zipfile
 
 import angle_path_util
 
@@ -45,18 +47,6 @@ class _Global(object):
 
 def _ApkPath(suite_name):
     return os.path.join('%s_apk' % suite_name, '%s-debug.apk' % suite_name)
-
-
-@functools.lru_cache()
-def _FindAapt():
-    build_tools = (
-        pathlib.Path(angle_path_util.ANGLE_ROOT_DIR) / 'third_party' / 'android_sdk' / 'public' /
-        'build-tools')
-    latest_build_tools = sorted(build_tools.iterdir())[-1]
-    aapt = str(latest_build_tools / 'aapt')
-    aapt_info = subprocess.check_output([aapt, 'version']).decode()
-    logging.info('aapt version: %s', aapt_info.strip())
-    return aapt
 
 
 def _RemovePrefix(str, prefix):
@@ -88,7 +78,7 @@ def _InitializeAndroid(apk_path):
         if _Global.IsMultiUser():
             # TODO(b/361388557): Switch to a content provider for this, i.e. `content write`
             logging.warning(
-                'Using app dir for external storage, may not work with chromium scripts, may require `setenforce 0`'
+                '\n\n!!!!! Using app dir for external storage, may not work with chromium scripts, may require `setenforce 0` !!!!!\n'
             )
             _Global.external_storage = _Global.base_dir + 'chromium_tests_root/'
     else:
@@ -99,14 +89,14 @@ def _InitializeAndroid(apk_path):
     logging.debug('Temp dir: %s', _Global.temp_dir)
     logging.debug('External storage: %s', _Global.external_storage)
 
-    apk_files = subprocess.check_output([_FindAapt(), 'list', apk_path]).decode().split()
-    apk_so_libs = [posixpath.basename(f) for f in apk_files if f.endswith('.so')]
+    with zipfile.ZipFile(apk_path) as zf:
+        apk_so_libs = [posixpath.basename(f) for f in zf.namelist() if f.endswith('.so')]
+
     # When traces are outside of the apk this lib is also outside
     interpreter_so_lib = 'libangle_trace_interpreter.so'
     _Global.traces_outside_of_apk = interpreter_so_lib not in apk_so_libs
 
     if logging.getLogger().isEnabledFor(logging.DEBUG):
-        logging.debug(_AdbShell('dumpsys nfc | grep mScreenState || true').decode())
         logging.debug(_AdbShell('df -h').decode())
 
 
@@ -131,7 +121,7 @@ def _EnsureTestSuite(suite_name):
     assert IsAndroid()
 
     if _Global.current_suite != suite_name:
-        _PrepareTestSuite(suite_name)
+        PrepareTestSuite(suite_name)
         _Global.current_suite = suite_name
 
 
@@ -148,22 +138,35 @@ def _Run(cmd):
 
 
 @functools.lru_cache()
-def _FindAdb():
-    platform_tools = (
-        pathlib.Path(angle_path_util.ANGLE_ROOT_DIR) / 'third_party' / 'android_sdk' / 'public' /
-        'platform-tools')
-    adb = str(platform_tools / 'adb') if platform_tools.exists() else 'adb'
+def FindAdb():
+    if platform.system() == 'Windows':
+        adb = 'adb.exe'  # from PATH
+    else:
+        platform_tools = (
+            pathlib.Path(angle_path_util.ANGLE_ROOT_DIR) / 'third_party' / 'android_sdk' /
+            'public' / 'platform-tools')
+        adb = str(platform_tools / 'adb') if platform_tools.exists() else 'adb'
+
     adb_info = ', '.join(subprocess.check_output([adb, '--version']).decode().strip().split('\n'))
     logging.info('adb --version: %s', adb_info)
     return adb
 
 
 def _AdbRun(args):
-    return _Run([_FindAdb()] + args)
+    return _Run([FindAdb()] + args)
 
 
 def _AdbShell(cmd):
-    return _Run([_FindAdb(), 'shell', cmd])
+    output = _Run([FindAdb(), 'shell', cmd])
+    if platform.system() == 'Windows':
+        return output.replace(b'\r\n', b'\n')
+    return output
+
+
+def _AdbShellWithRunAs(cmd):
+    if _Global.use_run_as:
+        cmd = "run-as com.android.angle.test sh -c '{cmd}'".format(cmd=cmd)
+    return _AdbShell(cmd)
 
 
 def _GetAdbRoot(shell_id, su_path):
@@ -233,9 +236,12 @@ def _MakeTar(path, patterns):
 def _AddRestrictedTracesJson():
     _MakeTar(_Global.external_storage + 't.tar', [
         '../../src/tests/restricted_traces/*/*.json',
-        '../../src/tests/restricted_traces/restricted_traces.json'
+        'gen/trace_list.json',
     ])
-    _AdbShell('r=' + _Global.external_storage + '; tar -xf $r/t.tar -C $r/ && rm $r/t.tar')
+    _AdbShell(
+        'r=' + _Global.external_storage +
+        '; tar --no-same-permissions --no-same-owner -xf $r/t.tar -C $r/ && rm $r/t.tar && chmod -R o+r $r/'
+    )
 
 
 def _AddDeqpFiles(suite_name):
@@ -258,7 +264,10 @@ def _AddDeqpFiles(suite_name):
         patterns.append('gen/vk_gl_cts_data/data/gles2/data/brick.png')
 
     _MakeTar(_Global.external_storage + 'deqp.tar', patterns)
-    _AdbShell('r=' + _Global.external_storage + '; tar -xf $r/deqp.tar -C $r/ && rm $r/deqp.tar')
+    _AdbShell(
+        'r=' + _Global.external_storage +
+        '; tar --no-same-permissions --no-same-owner -xf $r/deqp.tar -C $r/ && rm $r/deqp.tar && chmod -R o+r $r/'
+    )
 
 
 def _GetDeviceApkPath():
@@ -320,7 +329,7 @@ def _CheckSameApkInstalled(apk_path):
     return False
 
 
-def _PrepareTestSuite(suite_name):
+def PrepareTestSuite(suite_name):
     apk_path = _ApkPath(suite_name)
 
     if _CheckSameApkInstalled(apk_path):
@@ -344,6 +353,10 @@ def _PrepareTestSuite(suite_name):
 
     if suite_name == ANGLE_TRACE_TEST_SUITE:
         _AddRestrictedTracesJson()
+        _AdbRun([
+            'push', '../../src/tests/perf_tests/angle_trace_tests_expectations.txt',
+            _Global.external_storage + 'src/tests/perf_tests/angle_trace_tests_expectations.txt'
+        ])
 
     if '_deqp_' in suite_name:
         _AddDeqpFiles(suite_name)
@@ -421,7 +434,8 @@ def PrepareRestrictedTraces(traces):
             _PushLibToAppDir(lib_name)
 
         tracegz = 'gen/tracegz_' + trace + '.gz'
-        _Push(tracegz, tracegz)
+        if os.path.exists(tracegz):  # Requires angle_enable_tracegz
+            _Push(tracegz, tracegz)
 
     # Push one additional file when running outside the APK
     if _Global.traces_outside_of_apk:
@@ -471,6 +485,7 @@ def _SetCaptureProps(env, device_out_dir):
         'ANGLE_CAPTURE_FRAME_START': 'debug.angle.capture.frame_start',
         'ANGLE_CAPTURE_FRAME_END': 'debug.angle.capture.frame_end',
         'ANGLE_CAPTURE_TRIGGER': 'debug.angle.capture.trigger',
+        'ANGLE_CAPTURE_END_CAPTURE': 'debug.angle.capture.end_capture',
         'ANGLE_CAPTURE_LABEL': 'debug.angle.capture.label',
         'ANGLE_CAPTURE_COMPRESSION': 'debug.angle.capture.compression',
         'ANGLE_CAPTURE_VALIDATION': 'debug.angle.capture.validation',
@@ -607,8 +622,11 @@ def RunTests(test_suite, args, stdoutfile=None, log_output=True):
             if perf_output_path:
                 _AdbRun(['pull', device_perf_path, perf_output_path])
 
-        if log_output:
+        if log_output or result:
             logging.info(output.decode())
+
+        if result:
+            logging.error('Tests failed, see stdout above')
 
         if stdoutfile:
             with open(stdoutfile, 'wb') as f:

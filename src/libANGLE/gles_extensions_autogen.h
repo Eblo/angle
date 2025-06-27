@@ -218,6 +218,9 @@ struct Extensions
     // GL_OES_draw_elements_base_vertex
     bool drawElementsBaseVertexOES = false;
 
+    // GL_EXT_draw_instanced
+    bool drawInstancedEXT = false;
+
     // GL_OES_EGL_image
     bool EGLImageOES = false;
 
@@ -235,6 +238,9 @@ struct Extensions
 
     // GL_EXT_EGL_image_storage
     bool EGLImageStorageEXT = false;
+
+    // GL_EXT_EGL_image_storage_compression
+    bool EGLImageStorageCompressionEXT = false;
 
     // GL_NV_EGL_stream_consumer_external
     bool EGLStreamConsumerExternalNV = false;
@@ -262,6 +268,15 @@ struct Extensions
 
     // GL_EXT_frag_depth
     bool fragDepthEXT = false;
+
+    // GL_EXT_fragment_shading_rate
+    bool fragmentShadingRateEXT = false;
+
+    // GL_EXT_fragment_shading_rate_attachment
+    bool fragmentShadingRateAttachmentEXT = false;
+
+    // GL_EXT_fragment_shading_rate_primitive
+    bool fragmentShadingRatePrimitiveEXT = false;
 
     // GL_ANGLE_framebuffer_blit
     bool framebufferBlitANGLE = false;
@@ -307,6 +322,9 @@ struct Extensions
 
     // GL_EXT_memory_object_fd
     bool memoryObjectFdEXT = false;
+
+    // GL_EXT_multi_draw_arrays
+    bool multiDrawArraysEXT = false;
 
     // GL_EXT_multi_draw_indirect
     bool multiDrawIndirectEXT = false;
@@ -386,8 +404,14 @@ struct Extensions
     // GL_EXT_render_snorm
     bool renderSnormEXT = false;
 
+    // GL_OES_required_internalformat
+    bool requiredInternalformatOES = false;
+
     // GL_OES_rgb8_rgba8
     bool rgb8Rgba8OES = false;
+
+    // GL_ARM_rgba8
+    bool rgba8ARM = false;
 
     // GL_KHR_robust_buffer_access_behavior
     bool robustBufferAccessBehaviorKHR = false;
@@ -469,9 +493,6 @@ struct Extensions
 
     // GL_OES_surfaceless_context
     bool surfacelessContextOES = false;
-
-    // GL_ARB_sync
-    bool syncARB = false;
 
     // GL_EXT_tessellation_shader
     bool tessellationShaderEXT = false;
@@ -598,6 +619,9 @@ struct Extensions
 
     // GL_EXT_texture_storage
     bool textureStorageEXT = false;
+
+    // GL_EXT_texture_storage_compression
+    bool textureStorageCompressionEXT = false;
 
     // GL_OES_texture_storage_multisample_2d_array
     bool textureStorageMultisample2dArrayOES = false;
@@ -767,9 +791,6 @@ struct Extensions
     // GL_ANGLE_stencil_texturing
     bool stencilTexturingANGLE = false;
 
-    // GL_CHROMIUM_sync_query
-    bool syncQueryCHROMIUM = false;
-
     // GL_ANGLE_texture_compression_dxt3
     bool textureCompressionDxt3ANGLE = false;
 
@@ -797,6 +818,9 @@ struct Extensions
     // GLES 1.0 and 1.1 extensions
     // ---------------------------
 
+    // GL_OES_blend_subtract
+    bool blendSubtractOES = false;
+
     // GL_OES_draw_texture
     bool drawTextureOES = false;
 
@@ -817,6 +841,9 @@ struct Extensions
 
     // GL_OES_texture_cube_map
     bool textureCubeMapOES = false;
+
+    // GL_OES_texture_mirrored_repeat
+    bool textureMirroredRepeatOES = false;
 };
 }  // namespace gl
 

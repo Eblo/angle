@@ -489,8 +489,14 @@ cl_int ValidateHostRegionForImage(const Image &image,
         {
             return CL_INVALID_VALUE;
         }
+        else if (slicePitch < rowPitch)
+        {
+            return CL_INVALID_VALUE;
+        }
         // CL_INVALID_VALUE if slice_pitch is not 0 and is less than row_pitch x height.
-        if (slicePitch < rowPitch * region[1])
+        else if (((image.getType() == MemObjectType::Image2D_Array) ||
+                  (image.getType() == MemObjectType::Image3D)) &&
+                 (slicePitch < rowPitch * region[1]))
         {
             return CL_INVALID_VALUE;
         }
@@ -832,17 +838,12 @@ cl_int ValidateGetCommandQueueInfo(cl_command_queue command_queue,
                                    const void *param_value,
                                    const size_t *param_value_size_ret)
 {
-    // CL_INVALID_COMMAND_QUEUE if command_queue is not a valid command-queue ...
+    // CL_INVALID_COMMAND_QUEUE if command_queue is not a valid command-queue
     if (!CommandQueue::IsValid(command_queue))
     {
         return CL_INVALID_COMMAND_QUEUE;
     }
     const CommandQueue &queue = command_queue->cast<CommandQueue>();
-    // or if command_queue is not a valid command-queue for param_name.
-    if (param_name == CommandQueueInfo::Size && queue.isOnDevice())
-    {
-        return CL_INVALID_COMMAND_QUEUE;
-    }
 
     // CL_INVALID_VALUE if param_name is not one of the supported values.
     const cl_version version = queue.getDevice().getVersion();
@@ -862,6 +863,23 @@ cl_int ValidateGetCommandQueueInfo(cl_command_queue command_queue,
         default:
             // All remaining possible values for param_name are valid for all versions.
             break;
+    }
+
+    // CL_INVALID_COMMAND_QUEUE if command_queue is not a valid command-queue for param_name.
+    if (param_name == CommandQueueInfo::Size)
+    {
+        if (queue.isOnDevice() && !queue.getDevice().hasDeviceEnqueueCaps())
+        {
+            return CL_INVALID_COMMAND_QUEUE;
+        }
+        if (queue.getDevice().getPlatform().isVersionOrNewer(3u, 0u) && !queue.isOnDevice())
+        {
+            // Device-side enqueue and on-device queues are optional for devices supporting
+            // OpenCL 3.0. When device-side enqueue is not supported:
+            // - clGetCommandQueueInfo, passing CL_QUEUE_SIZE Returns CL_INVALID_COMMAND_QUEUE since
+            // command_queue cannot be a valid device command-queue.
+            return CL_INVALID_COMMAND_QUEUE;
+        }
     }
 
     return CL_SUCCESS;
@@ -2237,6 +2255,22 @@ cl_int ValidateEnqueueNDRangeKernel(cl_command_queue command_queue,
     }
     if (local_work_size != nullptr)
     {
+        // CL_INVALID_WORK_GROUP_SIZE when non-uniform work-groups are not supported, the size of
+        // each work-group must be uniform. If local_work_size is specified, the values specified in
+        // global_work_size[0],...,global_work_size[work_dim - 1] must be evenly divisible by
+        // the corresponding values specified in local_work_size[0],...,
+        // local_work_size[work_dim-1].
+        if (!device.supportsNonUniformWorkGroups())
+        {
+            for (cl_uint i = 0; i < work_dim; ++i)
+            {
+                if (global_work_size[i] % local_work_size[i] != 0)
+                {
+                    return CL_INVALID_WORK_GROUP_SIZE;
+                }
+            }
+        }
+
         for (cl_uint i = 0; i < work_dim; ++i)
         {
             // CL_INVALID_WORK_GROUP_SIZE when non-uniform work-groups are not supported, the size
@@ -2272,6 +2306,37 @@ cl_int ValidateEnqueueNDRangeKernel(cl_command_queue command_queue,
             if (global_work_size[dim] == 0u)
             {
                 return CL_INVALID_GLOBAL_WORK_SIZE;
+            }
+        }
+    }
+
+    // CL_INVALID_GLOBAL_WORK_SIZE if any of the values specified in global_work_size[0], ...
+    // global_work_size[work_dim - 1] exceed the maximum value representable by size_t on the device
+    // on which the kernel-instance will be enqueued.
+    if (global_work_size != nullptr)
+    {
+        for (cl_uint dim = 0u; dim < work_dim; ++dim)
+        {
+            if (global_work_size[dim] > UINT32_MAX)
+            {
+                // Set hard limit in ANGLE to 2^32 for all backends (regardless of device support).
+                return CL_INVALID_GLOBAL_WORK_SIZE;
+            }
+        }
+    }
+
+    // CL_INVALID_GLOBAL_OFFSET if the value specified in global_work_size + the corresponding
+    // values in global_work_offset for any dimensions is greater than the maximum value
+    // representable by size t on the device on which the kernel-instance will be enqueued
+    if (global_work_offset != nullptr)
+    {
+        for (cl_uint dim = 0u; dim < work_dim; ++dim)
+        {
+            if (static_cast<uint32_t>((global_work_offset[dim] + global_work_size[dim])) <
+                global_work_offset[dim])
+            {
+                // Set hard limit in ANGLE to 2^32 for all backends (regardless of device support).
+                return CL_INVALID_GLOBAL_OFFSET;
             }
         }
     }
@@ -2661,6 +2726,18 @@ cl_int ValidateCreateSubBuffer(cl_mem buffer,
         return CL_INVALID_BUFFER_SIZE;
     }
 
+    // CL_MISALIGNED_SUB_BUFFER_OFFSET when the sub-buffer object is created with an offset that is
+    // not aligned to CL_DEVICE_MEM_BASE_ADDR_ALIGN value (which is in bits!) for devices associated
+    // with the context.
+    const Memory &memory = buffer->cast<Memory>();
+    for (const DevicePtr &device : memory.getContext().getDevices())
+    {
+        if (region->origin % (device->getInfo().memBaseAddrAlign / CHAR_BIT) != 0)
+        {
+            return CL_MISALIGNED_SUB_BUFFER_OFFSET;
+        }
+    }
+
     return CL_SUCCESS;
 }
 
@@ -3047,6 +3124,15 @@ cl_int ValidateCreateImage(cl_context context,
 
     // CL_INVALID_OPERATION if there are no devices in context that support images.
     if (!ctx.supportsImages())
+    {
+        return CL_INVALID_OPERATION;
+    }
+
+    // Returns CL_INVALID_OPERATION if no devices in context support creating a 2D image from a
+    // buffer.
+    const bool isImage2dFromBuffer =
+        image_desc->image_type == CL_MEM_OBJECT_IMAGE2D && image_desc->mem_object != NULL;
+    if (isImage2dFromBuffer && !ctx.supportsImage2DFromBuffer())
     {
         return CL_INVALID_OPERATION;
     }
@@ -3809,6 +3895,10 @@ cl_int ValidateCreateProgramWithIL(cl_context context, const void *il, size_t le
 
 cl_int ValidateCloneKernel(cl_kernel source_kernel)
 {
+    if (!Kernel::IsValid(source_kernel))
+    {
+        return CL_INVALID_KERNEL;
+    }
     return CL_SUCCESS;
 }
 
