@@ -57,51 +57,51 @@ jobs:
           name: windows-x64
           path: windows-x64
 
-#   build-linux-x64:
-#     runs-on: ubuntu-latest
-#     steps:
-#       - name: Checkout sources
-#         run: |
-#           git clone https://github.com/Eblo/angle .
-#           git clone https://chromium.googlesource.com/chromium/tools/depot_tools.git
-#       - name: Cache build artifacts
-#         uses: actions/cache@v4
-#         with:
-#           path: build
-#           key: ${{ runner.os }}-build-${{ hashFiles('src/**/*', 'CMakeLists.txt') }}
-#       
-#       - name: Cache output artifacts
-#         uses: actions/cache@v4
-#         with:
-#           path: out
-#           key: ${{ runner.os }}-out-${{ hashFiles('src/**/*') }}
-#       - name: Build
-#         run: |
-#           export PATH="$(pwd)/depot_tools:$PATH"
-#           gclient
-#           python scripts/bootstrap.py
-#           gclient sync
-#           ./build/install-build-deps.sh
-#           gn gen out/Release --args="is_debug=false is_android=false"
-#           autoninja -C out/Release
-#       - name: Pack
-#         run: |
-#           mkdir linux-x64
-#           ls out/Release
-#           mv -f out/Release/libEGL.so linux-x64/
-#           mv -f out/Release/libGLESv2.so linux-x64/
-#           mv -f out/Release/vk_swiftshader.so linux-x64/
-#           mv -f out/Release/vk_swiftshader_icd.json linux-x64/
-#           mv -f out/Release/vulkan-1.so linux-x64/
-#           mv -f LICENSE linux-x64/
-#       - name: Upload Artifact
-#         uses: actions/upload-artifact@v4
-#         with:
-#           name: linux-x64
-#           path: linux-x64
+  build-linux-x64:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout sources
+        run: |
+          git clone https://github.com/Eblo/angle .
+          git clone https://chromium.googlesource.com/chromium/tools/depot_tools.git
+      - name: Cache build artifacts
+        uses: actions/cache@v4
+        with:
+          path: build
+          key: ${{ runner.os }}-build-${{ hashFiles('src/**/*', 'CMakeLists.txt') }}
+      
+      - name: Cache output artifacts
+        uses: actions/cache@v4
+        with:
+          path: out
+          key: ${{ runner.os }}-out-${{ hashFiles('src/**/*') }}
+      - name: Build
+        run: |
+          export PATH="$(pwd)/depot_tools:$PATH"
+          gclient
+          python scripts/bootstrap.py
+          gclient sync
+          ./build/install-build-deps.sh
+          gn gen out/Release --args="is_debug=false is_android=false"
+          autoninja -C out/Release
+      - name: Pack
+        run: |
+          mkdir linux-x64
+          ls out/Release
+          mv -f out/Release/libEGL.so linux-x64/
+          mv -f out/Release/libGLESv2.so linux-x64/
+          mv -f out/Release/vk_swiftshader.so linux-x64/
+          mv -f out/Release/vk_swiftshader_icd.json linux-x64/
+          mv -f out/Release/vulkan-1.so linux-x64/
+          mv -f LICENSE linux-x64/
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-x64
+          path: linux-x64
 
   build-macos-x64:
-    runs-on: macos-latest
+    runs-on: macos-15
     steps:
       - name: Checkout sources
         run: |
