@@ -1703,10 +1703,10 @@ angle::Result WindowSurfaceVk::createSwapChain(vk::ErrorContext *context)
     }
 #endif
 
-    if (renderer->getFeatures().supportsSwapchainMaintenance1.enabled)
-    {
-        swapchainInfo.flags |= VK_SWAPCHAIN_CREATE_DEFERRED_MEMORY_ALLOCATION_BIT_EXT;
-    }
+    // if (renderer->getFeatures().supportsSwapchainMaintenance1.enabled)
+    // {
+    //     swapchainInfo.flags |= VK_SWAPCHAIN_CREATE_DEFERRED_MEMORY_ALLOCATION_BIT_EXT;
+    // }
 
     ASSERT(!mCompatiblePresentModes.empty());
     VkSwapchainPresentModesCreateInfoEXT compatibleModesInfo = {};
