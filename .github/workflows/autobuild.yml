@@ -90,9 +90,9 @@ jobs:
           ls out/Release
           mv -f out/Release/libEGL.so linux-x64/
           mv -f out/Release/libGLESv2.so linux-x64/
-          mv -f out/Release/vk_swiftshader.so linux-x64/
+          mv -f out/Release/libvk_swiftshader.so linux-x64/
           mv -f out/Release/vk_swiftshader_icd.json linux-x64/
-          mv -f out/Release/vulkan-1.so linux-x64/
+          mv -f out/Release/libvulkan.so.1 linux-x64/
           mv -f LICENSE linux-x64/
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
